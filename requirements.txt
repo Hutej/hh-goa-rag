@@ -1,0 +1,16 @@
+#   python -m venv venv
+#   source venv/bin/activate
+#   pip install -r requirements.txt
+
+numpy
+pandas
+pyarrow
+fastparquet
+transformers
+tokenizers
+sentence-transformers
+huggingface-hub
+pytest
+sarvamai
+openai
+qdrant-client

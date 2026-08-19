@@ -1,0 +1,60 @@
+{
+  "hindi": {
+    "path": "/home/hutej/System hang/hh-goa-rag/data/raw/MSMARCO-XI/train/hintrain.parquet",
+    "size_bytes": 3719813179,
+    "num_rows": 778638,
+    "num_row_groups": 1,
+    "created_by": "parquet-cpp-arrow version 19.0.1",
+    "row_groups": [
+      {
+        "rg": 0,
+        "rows": 778638,
+        "total_byte_size": 9729210887,
+        "total_byte_size_human": "9.06 GiB",
+        "num_columns": 17
+      }
+    ],
+    "columns": [
+      "source_lang",
+      "target_lang",
+      "meta",
+      "Answer",
+      "query_id",
+      "query_type",
+      "passages",
+      "Eng_Query",
+      "Eng_Answer",
+      "query"
+    ],
+    "schema_text": "size_bytes=3719813179 (3.46 GiB)\nnum_rows=778638\nnum_row_groups=1\ncreated_by='parquet-cpp-arrow version 19.0.1'\nrow_groups:\n  rg0: rows=778638 bytes=9.06 GiB cols=17\nschema:\n  - source_lang: string  (nullable=True)\n  - target_lang: string  (nullable=True)\n  - meta: struct<frequency_penalty: int64, max_tokens: int64, model_name: string, presence_penalty: int64, temperature: int64, top_p: int64>  (nullable=True)\n    - frequency_penalty: int64  (nullable=True)\n    - max_tokens: int64  (nullable=True)\n    - model_name: string  (nullable=True)\n    - presence_penalty: int64  (nullable=True)\n    - temperature: int64  (nullable=True)\n    - top_p: int64  (nullable=True)\n  - Answer: string  (nullable=True)\n  - query_id: int64  (nullable=True)\n  - query_type: string  (nullable=True)\n  - passages: struct<English_passages: list<element: string>, Translated_passages: list<element: string>, is_selected: list<element: int64>>  (nullable=True)\n    - English_passages: list<element: string>  (nullable=True)\n        [list of string]\n    - Translated_passages: list<element: string>  (nullable=True)\n        [list of string]\n    - is_selected: list<element: int64>  (nullable=True)\n        [list of int64]\n  - Eng_Query: string  (nullable=True)\n  - Eng_Answer: string  (nullable=True)\n  - query: string  (nullable=True)"
+  },
+  "marathi": {
+    "path": "/home/hutej/System hang/hh-goa-rag/data/raw/MSMARCO-XI/train/martrain.parquet",
+    "size_bytes": 3756780048,
+    "num_rows": 765873,
+    "num_row_groups": 1,
+    "created_by": "parquet-cpp-arrow version 19.0.1",
+    "row_groups": [
+      {
+        "rg": 0,
+        "rows": 765873,
+        "total_byte_size": 9907338533,
+        "total_byte_size_human": "9.23 GiB",
+        "num_columns": 17
+      }
+    ],
+    "columns": [
+      "source_lang",
+      "target_lang",
+      "meta",
+      "Answer",
+      "query_id",
+      "query_type",
+      "passages",
+      "Eng_Query",
+      "Eng_Answer",
+      "query"
+    ],
+    "schema_text": "size_bytes=3756780048 (3.50 GiB)\nnum_rows=765873\nnum_row_groups=1\ncreated_by='parquet-cpp-arrow version 19.0.1'\nrow_groups:\n  rg0: rows=765873 bytes=9.23 GiB cols=17\nschema:\n  - source_lang: string  (nullable=True)\n  - target_lang: string  (nullable=True)\n  - meta: struct<frequency_penalty: int64, max_tokens: int64, model_name: string, presence_penalty: int64, temperature: int64, top_p: int64>  (nullable=True)\n    - frequency_penalty: int64  (nullable=True)\n    - max_tokens: int64  (nullable=True)\n    - model_name: string  (nullable=True)\n    - presence_penalty: int64  (nullable=True)\n    - temperature: int64  (nullable=True)\n    - top_p: int64  (nullable=True)\n  - Answer: string  (nullable=True)\n  - query_id: int64  (nullable=True)\n  - query_type: string  (nullable=True)\n  - passages: struct<English_passages: list<element: string>, Translated_passages: list<element: string>, is_selected: list<element: int64>>  (nullable=True)\n    - English_passages: list<element: string>  (nullable=True)\n        [list of string]\n    - Translated_passages: list<element: string>  (nullable=True)\n        [list of string]\n    - is_selected: list<element: int64>  (nullable=True)\n        [list of int64]\n  - Eng_Query: string  (nullable=True)\n  - Eng_Answer: string  (nullable=True)\n  - query: string  (nullable=True)"
+  }
+}

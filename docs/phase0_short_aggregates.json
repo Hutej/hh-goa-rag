@@ -1,0 +1,208 @@
+{
+  "hindi": {
+    "rows": 778638,
+    "batches_seen": 96,
+    "peak_rss_mb": 276.984375,
+    "source_lang_dist": {
+      "eng_Latn": 778638
+    },
+    "target_lang_dist": {
+      "hin_Deva": 778638
+    },
+    "query_type_dist": {
+      "DESCRIPTION": 411657,
+      "NUMERIC": 205118,
+      "PERSON": 43888,
+      "LOCATION": 48928,
+      "ENTITY": 69047
+    },
+    "null_counts": {
+      "source_lang": 0,
+      "target_lang": 0,
+      "query_id": 0,
+      "query_type": 0,
+      "query": 0,
+      "Answer": 0,
+      "Eng_Query": 0,
+      "Eng_Answer": 0,
+      "meta": 0
+    },
+    "sample_rows": [
+      {
+        "source_lang": "eng_Latn",
+        "target_lang": "hin_Deva",
+        "query_id": 1185869,
+        "query_type": "DESCRIPTION",
+        "query": "मैनहट्टन परियोजना की सफलता का तुरंत क्या प्रभाव पड़ा?",
+        "Answer": "मैनहट्टन परियोजना की सफलता का तत्काल प्रभाव परमाणु शोधकर्ताओं और इंजीनियरों की प्रभावशाली उपलब्धि पर एकमात्र बादल था जो उनकी सफलता का वास्तव में अर्थ …(+34)",
+        "Eng_Query": ")what was the immediate impact of the success of the manhattan project?",
+        "Eng_Answer": "The immediate impact of the success of the manhattan project was the only cloud hanging over the impressive achievement of the atomic researchers and …(+97)",
+        "meta": {
+          "frequency_penalty": 0,
+          "max_tokens": 4096,
+          "model_name": "ckpt-3epochs-sft-then-400k-kd",
+          "presence_penalty": 0,
+          "temperature": 0,
+          "top_p": 1
+        }
+      },
+      {
+        "source_lang": "eng_Latn",
+        "target_lang": "hin_Deva",
+        "query_id": 1185868,
+        "query_type": "DESCRIPTION",
+        "query": "न्याय को पीड़ित, समुदाय और अपराधी द्वारा अपराधी कृत्य के कारण हुए नुकसान की मरम्मत करने के लिए डिज़ाइन किया गया है। प्रश्न 19 विकल्प:",
+        "Answer": "पीड़ित और अपराधी के बीच संवाद को बढ़ावा देने वाले पुनर्स्थापनात्मक न्याय ने पीड़ित संतुष्टि और अपराधी जवाबदेही की उच्चतम दरें दर्शाई हैं।",
+        "Eng_Query": "_________ justice is designed to repair the harm to victim, the community and the offender caused by the offender criminal act. question 19 options:",
+        "Eng_Answer": "Restorative justice that fosters dialogue between victim and offender has shown the highest rates of victim satisfaction and offender accountability.",
+        "meta": {
+          "frequency_penalty": 0,
+          "max_tokens": 4096,
+          "model_name": "ckpt-3epochs-sft-then-400k-kd",
+          "presence_penalty": 0,
+          "temperature": 0,
+          "top_p": 1
+        }
+      },
+      {
+        "source_lang": "eng_Latn",
+        "target_lang": "hin_Deva",
+        "query_id": 620830,
+        "query_type": "DESCRIPTION",
+        "query": "फ्लूम किस दिशा में बहता है",
+        "Answer": "कोई उत्तर नहीं मिला।",
+        "Eng_Query": "what direction does phloem flow",
+        "Eng_Answer": "No Answer Present.",
+        "meta": {
+          "frequency_penalty": 0,
+          "max_tokens": 4096,
+          "model_name": "ckpt-3epochs-sft-then-400k-kd",
+          "presence_penalty": 0,
+          "temperature": 0,
+          "top_p": 1
+        }
+      },
+      {
+        "source_lang": "eng_Latn",
+        "target_lang": "hin_Deva",
+        "query_id": 150905,
+        "query_type": "DESCRIPTION",
+        "query": "विभिन्न प्रकार की सामाजिक सुरक्षा विकलांगता",
+        "Answer": "सामाजिक सुरक्षा विकलांगता बीमा लाभ, विकलांगता बीमा लाभ।",
+        "Eng_Query": "different types of social security disability",
+        "Eng_Answer": "Social security disability insurance benefit, disability insurance benefits.",
+        "meta": {
+          "frequency_penalty": 0,
+          "max_tokens": 4096,
+          "model_name": "ckpt-3epochs-sft-then-400k-kd",
+          "presence_penalty": 0,
+          "temperature": 0,
+          "top_p": 1
+        }
+      }
+    ]
+  },
+  "marathi": {
+    "rows": 765873,
+    "batches_seen": 94,
+    "peak_rss_mb": 317.609375,
+    "source_lang_dist": {
+      "eng_Latn": 765873
+    },
+    "target_lang_dist": {
+      "mar_Deva": 765873
+    },
+    "query_type_dist": {
+      "DESCRIPTION": 404697,
+      "NUMERIC": 200853,
+      "PERSON": 43627,
+      "LOCATION": 48529,
+      "ENTITY": 68167
+    },
+    "null_counts": {
+      "source_lang": 0,
+      "target_lang": 0,
+      "query_id": 0,
+      "query_type": 0,
+      "query": 0,
+      "Answer": 0,
+      "Eng_Query": 0,
+      "Eng_Answer": 0,
+      "meta": 0
+    },
+    "sample_rows": [
+      {
+        "source_lang": "eng_Latn",
+        "target_lang": "mar_Deva",
+        "query_id": 1185869,
+        "query_type": "DESCRIPTION",
+        "query": "मॅनहॅटन प्रकल्पाच्या यशाचा तात्काळ काय परिणाम झाला?",
+        "Answer": "मॅनहॅटन प्रकल्पाच्या यशाचा तात्काळ परिणाम हा अणुसंशोधक आणि अभियंत्यांच्या प्रभावी कामगिरीवरच एकमेव ढग होता ज्याचा त्यांच्या यशाचा खरा अर्थ होता; लाखो …(+31)",
+        "Eng_Query": ")what was the immediate impact of the success of the manhattan project?",
+        "Eng_Answer": "The immediate impact of the success of the manhattan project was the only cloud hanging over the impressive achievement of the atomic researchers and …(+97)",
+        "meta": {
+          "frequency_penalty": 0,
+          "max_tokens": 4096,
+          "model_name": "ckpt-3epochs-sft-then-400k-kd",
+          "presence_penalty": 0,
+          "temperature": 0,
+          "top_p": 1
+        }
+      },
+      {
+        "source_lang": "eng_Latn",
+        "target_lang": "mar_Deva",
+        "query_id": 1185868,
+        "query_type": "DESCRIPTION",
+        "query": "न्याय हा गुन्हेगारी कृत्यामुळे पीडित, समुदाय आणि गुन्हेगाराला झालेल्या हानीची भरपाई करण्यासाठी तयार केला गेला आहे. प्रश्न १९ पर्याय:",
+        "Answer": "पीडित आणि गुन्हेगार यांच्यातील संवादाला प्रोत्साहन देणाऱ्या पुनर्संचयी न्यायाने पीडितांचे समाधान आणि गुन्हेगारांची जबाबदारी यांचे सर्वोच्च दर दर्शविले…(+6)",
+        "Eng_Query": "_________ justice is designed to repair the harm to victim, the community and the offender caused by the offender criminal act. question 19 options:",
+        "Eng_Answer": "Restorative justice that fosters dialogue between victim and offender has shown the highest rates of victim satisfaction and offender accountability.",
+        "meta": {
+          "frequency_penalty": 0,
+          "max_tokens": 4096,
+          "model_name": "ckpt-3epochs-sft-then-400k-kd",
+          "presence_penalty": 0,
+          "temperature": 0,
+          "top_p": 1
+        }
+      },
+      {
+        "source_lang": "eng_Latn",
+        "target_lang": "mar_Deva",
+        "query_id": 620830,
+        "query_type": "DESCRIPTION",
+        "query": "फ्लोएम कोणत्या दिशेने वाहते",
+        "Answer": "उत्तर नाही.",
+        "Eng_Query": "what direction does phloem flow",
+        "Eng_Answer": "No Answer Present.",
+        "meta": {
+          "frequency_penalty": 0,
+          "max_tokens": 4096,
+          "model_name": "ckpt-3epochs-sft-then-400k-kd",
+          "presence_penalty": 0,
+          "temperature": 0,
+          "top_p": 1
+        }
+      },
+      {
+        "source_lang": "eng_Latn",
+        "target_lang": "mar_Deva",
+        "query_id": 150905,
+        "query_type": "DESCRIPTION",
+        "query": "विविध प्रकारचे सामाजिक सुरक्षा अपंगत्व",
+        "Answer": "सामाजिक सुरक्षा अपंगत्व विमा लाभ, अपंगत्व विमा लाभ.",
+        "Eng_Query": "different types of social security disability",
+        "Eng_Answer": "Social security disability insurance benefit, disability insurance benefits.",
+        "meta": {
+          "frequency_penalty": 0,
+          "max_tokens": 4096,
+          "model_name": "ckpt-3epochs-sft-then-400k-kd",
+          "presence_penalty": 0,
+          "temperature": 0,
+          "top_p": 1
+        }
+      }
+    ]
+  }
+}
