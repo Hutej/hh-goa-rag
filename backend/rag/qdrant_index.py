@@ -104,6 +104,47 @@ def validate_artifacts(strategy: str) -> int:
     return n
 
 
+def dense_search(client: QdrantClient, strategy: str, query_vector,
+                 top_k: int = 10, only_selected: bool = False) -> list[dict]:
+    """Run a dense (cosine) search against the strategy's Qdrant collection.
+
+    Reused by retrieve_dense.py and retrieve_hybrid.py so the dense path is not
+    duplicated. ``query_vector`` is a (1024,) unit-norm vector (encode_batch is the
+    single normalization — do NOT re-normalize). Returns hit dicts keyed by
+    chunk_id with rank/score + the payload fields. The client is owned by the
+    caller (which must ``close()`` it in a ``finally``).
+    """
+    from qdrant_client.http.models import FieldCondition, Filter, MatchValue
+    name = collection_name(strategy)
+    if not client.collection_exists(name):
+        raise RuntimeError(f"collection {name} does not exist — run index_qdrant.py")
+    qfilter = None
+    if only_selected:
+        qfilter = Filter(must=[FieldCondition(key="is_selected",
+                                             match=MatchValue(value=1))])
+    # accept (1024,) or (1, 1024) numpy / list; Qdrant wants a 1-D list
+    import numpy as _np
+    vec = _np.asarray(query_vector, dtype=_np.float32).reshape(-1).tolist()
+    res = client.query_points(
+        name, query=vec, limit=top_k, query_filter=qfilter,
+        with_payload=True, with_vectors=False)
+    out = []
+    for r, p in enumerate(res.points, start=1):
+        pl = p.payload or {}
+        out.append({
+            "rank": r,
+            "chunk_id": pl.get("chunk_id"),
+            "document_id": pl.get("document_id"),
+            "score": round(float(p.score), 6),
+            "text": pl.get("text"),
+            "query_id": pl.get("query_id"),
+            "chunk_index": pl.get("chunk_index"),
+            "is_selected": pl.get("is_selected"),
+            "strategy": strategy,
+        })
+    return out
+
+
 def stream_points(strategy: str, start: int, end: int):
     """Yield ``(point_id, vector_list, payload_dict)`` for rows [start, end).
 
@@ -153,5 +194,5 @@ def stream_points(strategy: str, start: int, end: int):
 __all__ = [
     "EMBED_DIM", "QDRANT_DIR", "PAYLOAD_FIELDS", "STRATEGIES",
     "collection_name", "get_client", "ensure_collection",
-    "validate_artifacts", "stream_points",
+    "validate_artifacts", "dense_search", "stream_points",
 ]

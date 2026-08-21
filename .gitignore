@@ -10,6 +10,7 @@ data/processed/
 data/sample/
 data/processed/embeddings/
 data/processed/qdrant/
+data/processed/bm25/
 .cache/
 .cache/huggingface/
 *.safetensors
@@ -24,3 +25,7 @@ __pycache__/
 .idea/
 .vscode/
 .claude
+
+# scratch / local-only
+test.py
+cloudflared

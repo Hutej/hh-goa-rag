@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Voice-Enabled RAG</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#0b1020; --bg2:#121a33; --card:#161f3d; --card2:#1c2750;
+    --border:#2a3666; --text:#e8ecf8; --muted:#9aa6c8;
+    --accent:#5b8cff; --accent2:#7c5cff; --good:#3ddc97; --warn:#ff5c7a;
+    --shadow:0 10px 40px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:radial-gradient(1200px 600px at 70% -10%,#1a2550 0,transparent 60%),var(--bg);color:var(--text);font-family:'Inter','Noto Sans Devanagari',system-ui,sans-serif;min-height:100vh}
+  .wrap{max-width:880px;margin:0 auto;padding:28px 18px 80px}
+  header{margin-bottom:8px}
+  .badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--accent);background:rgba(91,140,255,.12);border:1px solid rgba(91,140,255,.3);padding:4px 10px;border-radius:999px;margin-bottom:14px}
+  h1{font-size:30px;margin:0 0 6px;letter-spacing:-.5px;background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .sub{color:var(--muted);font-size:15px;margin:0 0 22px}
+  .card{background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid var(--border);border-radius:18px;padding:20px;box-shadow:var(--shadow)}
+  .input-row{display:flex;gap:10px;align-items:stretch;flex-wrap:wrap}
+  .text-input{flex:1;min-width:220px;background:#0e1530;border:1px solid var(--border);color:var(--text);border-radius:12px;padding:14px 16px;font-size:15px;font-family:inherit;outline:none}
+  .text-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(91,140,255,.18)}
+  .mic{width:54px;height:54px;border:none;border-radius:14px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 20px rgba(91,140,255,.4);transition:transform .12s,box-shadow .12s}
+  .mic:hover{transform:translateY(-1px)}
+  .mic.rec{background:linear-gradient(135deg,#ff5c7a,#ff8a3c);animation:pulse 1.3s infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,92,122,.5)}50%{box-shadow:0 0 0 12px rgba(255,92,122,0)}}
+  .ask{border:none;border-radius:12px;padding:0 22px;font-size:15px;font-weight:600;cursor:pointer;background:#e8ecf8;color:#0b1020;display:flex;align-items:center;gap:8px;transition:opacity .12s}
+  .ask:disabled{opacity:.55;cursor:not-allowed}
+  .hint{color:var(--muted);font-size:12.5px;margin-top:10px;display:flex;gap:14px;flex-wrap:wrap}
+  .hint b{color:var(--text);font-weight:600}
+  .state{margin-top:18px}
+  .pill{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--muted)}
+  .spin{width:16px;height:16px;border:2px solid rgba(255,255,255,.25);border-top-color:var(--accent);border-radius:50%;animation:rot .8s linear infinite}
+  @keyframes rot{to{transform:rotate(360deg)}}
+  .err{color:var(--warn);background:rgba(255,92,122,.1);border:1px solid rgba(255,92,122,.3);border-radius:12px;padding:14px 16px;font-size:14px;margin-top:18px}
+  .answer{margin-top:20px}
+  .ans-card{background:#0e1530;border:1px solid var(--border);border-radius:14px;padding:18px 20px;line-height:1.65;font-size:16px;white-space:pre-wrap}
+  .guard{margin-top:10px;color:var(--warn);font-size:13px}
+  .section-title{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:26px 0 12px;font-weight:600}
+  .src{background:#0e1530;border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:10px}
+  .src-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+  .src-id{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:var(--accent);background:rgba(91,140,255,.1);padding:3px 8px;border-radius:6px}
+  .src-score{font-size:12px;color:var(--muted)}
+  .src-score b{color:var(--good);font-weight:600}
+  .src-text{font-size:14px;color:var(--text);opacity:.92;line-height:1.55}
+  .latency{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-top:6px}
+  .lat{background:#0e1530;border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+  .lat .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .lat .v{font-size:18px;font-weight:600;margin-top:3px}
+  .lat.total .v{color:var(--accent)}
+  footer{margin-top:30px;color:var(--muted);font-size:12px;text-align:center}
+  @media(max-width:560px){h1{font-size:24px} .ask{padding:0 16px} .mic{width:48px;height:48px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="badge">● HH Goa · Hindi Voice RAG</span>
+    <h1>Voice-Enabled RAG</h1>
+    <p class="sub">Ask a question in Hindi and get a grounded answer.</p>
+  </header>
+
+  <div class="card">
+    <div class="input-row">
+      <button class="mic" id="mic" title="Record (Hindi)">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+      </button>
+      <input class="text-input" id="q" type="text" placeholder="या यहाँ टाइप करें… (e.g. मैनहट्टन परियोजना क्या थी?)" autocomplete="off" />
+      <button class="ask" id="ask">Ask →</button>
+    </div>
+    <div class="hint">
+      <span><b>Mic:</b> Hindi speech → text</span>
+      <span><b>Text:</b> fallback if mic blocked</span>
+      <span id="sttstate"></span>
+    </div>
+  </div>
+
+  <div class="state" id="state"></div>
+  <div id="results"></div>
+  <footer>Grounded answers · BGE-M3 + Qdrant dense + BM25 + RRF · sources cited · latency measured live</footer>
+</div>
+
+<script>
+const API = (location.port === '5173' || location.port === '3000') ? 'http://localhost:7860' : ''; // dev proxy fallback
+const $ = id => document.getElementById(id);
+let mediaRec=null, chunks=[], recording=false;
+
+async function checkHealth(){
+  try{
+    const r = await fetch(`${API}/api/health`).then(r=>r.json());
+    $('sttstate').innerHTML = r.stt_available ? '· <b style="color:var(--good)">STT ready</b>' : '· <b style="color:var(--warn)">STT off (no key) — use text</b>';
+  }catch{ $('sttstate').innerHTML=''; }
+}
+checkHealth();
+
+// mic toggle
+$('mic').onclick = async ()=>{
+  if(recording){ mediaRec.stop(); return; }
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,sampleRate:16000}});
+    chunks=[];
+    // prefer wav-ish; webm is widely supported by browsers
+    const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
+    mediaRec = new MediaRecorder(stream, mime?{mimeType:mime}:undefined);
+    mediaRec.ondataavailable = e=>{ if(e.data.size) chunks.push(e.data); };
+    mediaRec.onstop = ()=>{
+      stream.getTracks().forEach(t=>t.stop());
+      const blob = new Blob(chunks, {type: mime||'audio/webm'});
+      sendAudio(blob);
+    };
+    mediaRec.start();
+    recording=true; $('mic').classList.add('rec'); $('mic').title='Stop';
+  }catch(e){
+    showError('Microphone unavailable: '+(e.message||'permission denied')+'. Please use the text input.');
+  }
+};
+
+function setBusy(b){
+  $('ask').disabled = b; $('mic').disabled = b;
+  $('state').innerHTML = b ? '<div class="pill"><span class="spin"></span> Processing… (first request may be slow while models load)</div>' : '';
+}
+
+function showError(msg){ $('state').innerHTML = `<div class="err">⚠ ${msg}</div>`; }
+
+async function sendAudio(blob){
+  setBusy(true); $('results').innerHTML='';
+  const fd = new FormData();
+  fd.append('audio', blob, 'voice.webm');
+  fd.append('top_k','5');
+  try{
+    const r = await fetch(`${API}/api/query`, {method:'POST', body:fd});
+    const j = await r.json();
+    if(!r.ok){ showError(j.error||'Request failed'); return; }
+    render(j);
+  }catch(e){ showError('Network error: '+(e.message||e)); }
+  finally{ setBusy(false); }
+}
+
+async function sendText(){
+  const q = $('q').value.trim();
+  if(!q){ showError('Please type a question.'); return; }
+  setBusy(true); $('results').innerHTML='';
+  const fd = new FormData();
+  fd.append('text', q); fd.append('top_k','5');
+  try{
+    const r = await fetch(`${API}/api/query`, {method:'POST', body:fd});
+    const j = await r.json();
+    if(!r.ok){ showError(j.error||'Request failed'); return; }
+    render(j);
+  }catch(e){ showError('Network error: '+(e.message||e)); }
+  finally{ setBusy(false); }
+}
+$('ask').onclick = sendText;
+$('q').addEventListener('keydown', e=>{ if(e.key==='Enter') sendText(); });
+
+function render(j){
+  let html = '';
+  if(j.answer){
+    html += `<div class="answer"><div class="section-title">Answer</div>`;
+    html += `<div class="ans-card">${escapeHtml(j.answer)}</div>`;
+    if(j.guardrail_triggered) html += `<div class="guard">⚠ Guardrail: insufficient relevant context — generation skipped.</div>`;
+    html += `</div>`;
+  }
+  if(j.sources && j.sources.length){
+    html += `<div class="section-title">Sources (${j.sources.length})</div>`;
+    j.sources.forEach((s,i)=>{
+      const score = s.score!=null ? `<b>${(+s.score).toFixed(4)}</b>` : 'N/A';
+      const sel = s.is_selected ? `<span style="color:var(--good);font-size:11px;margin-left:6px">● selected</span>` : '';
+      html += `<div class="src">
+        <div class="src-head"><span class="src-id">${escapeHtml(s.chunk_id)}</span><span class="src-score">RRF ${score}${sel}</span></div>
+        <div class="src-text">${escapeHtml(s.text||'')}</div></div>`;
+    });
+  }
+  if(j.timing){
+    const t = j.timing;
+    html += `<div class="section-title">Latency breakdown (ms)</div><div class="latency">`;
+    [['stt','STT'],['encode','Encode'],['dense','Dense'],['bm25','BM25'],['rrf','RRF'],['generation','Generation'],['total','Total']].forEach(([k,label])=>{
+      const v = t[k+'_ms']; if(v==null) return;
+      html += `<div class="lat ${k==='total'?'total':''}"><div class="k">${label}</div><div class="v">${Math.round(v)}</div></div>`;
+    });
+    html += `</div>`;
+  }
+  if(j.query){ html = `<div class="section-title">Query</div><div class="ans-card" style="font-size:15px">${escapeHtml(j.query)}${j.language?` <span style="color:var(--muted);font-size:12px">(${j.language})</span>`:''}</div>` + html; }
+  $('results').innerHTML = html;
+}
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+</script>
+</body>
+</html>

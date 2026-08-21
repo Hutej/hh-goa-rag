@@ -1,0 +1,67 @@
+{
+  "strategy": "adaptive",
+  "n_queries": 100,
+  "seed": 12345,
+  "device": "cuda",
+  "dtype": "float16",
+  "rrf_k": 60,
+  "dense_k": 20,
+  "bm25_k": 20,
+  "configs": {
+    "dense_only": {
+      "dense_weight": 1.0,
+      "bm25_weight": 0.0,
+      "recall": {
+        "R@1": 0.26,
+        "R@5": 0.64,
+        "R@10": 0.72
+      },
+      "elapsed_s": 91.5
+    },
+    "d1.0_b0.25": {
+      "dense_weight": 1.0,
+      "bm25_weight": 0.25,
+      "recall": {
+        "R@1": 0.27,
+        "R@5": 0.61,
+        "R@10": 0.74
+      },
+      "elapsed_s": 79.3
+    },
+    "d1.0_b0.5": {
+      "dense_weight": 1.0,
+      "bm25_weight": 0.5,
+      "recall": {
+        "R@1": 0.26,
+        "R@5": 0.6,
+        "R@10": 0.73
+      },
+      "elapsed_s": 79.8
+    },
+    "d1.0_b1.0": {
+      "dense_weight": 1.0,
+      "bm25_weight": 1.0,
+      "recall": {
+        "R@1": 0.24,
+        "R@5": 0.56,
+        "R@10": 0.72
+      },
+      "elapsed_s": 80.2
+    },
+    "d2.0_b1.0": {
+      "dense_weight": 2.0,
+      "bm25_weight": 1.0,
+      "recall": {
+        "R@1": 0.26,
+        "R@5": 0.6,
+        "R@10": 0.73
+      },
+      "elapsed_s": 81.4
+    }
+  },
+  "best": "d1.0_b0.25",
+  "best_weights": {
+    "dense_weight": 1.0,
+    "bm25_weight": 0.25
+  }
+}

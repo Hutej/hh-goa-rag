@@ -1,0 +1,44 @@
+{
+  "strategy": "adaptive",
+  "device": "cpu",
+  "dtype": "float32",
+  "timed_queries": 20,
+  "warmup": 5,
+  "cold_start_ms": {
+    "encode_ms": 543.88,
+    "dense_ms": 553.75,
+    "bm25_ms": 743.47,
+    "rrf_ms": 0.11,
+    "total_ms": 1841.23
+  },
+  "warm_percentiles_ms": {
+    "encode_ms": {
+      "P50": 219.81,
+      "P70": 265.07,
+      "P100": 543.88
+    },
+    "dense_ms": {
+      "P50": 278.8,
+      "P70": 300.4,
+      "P100": 553.75
+    },
+    "bm25_ms": {
+      "P50": 397.88,
+      "P70": 531.02,
+      "P100": 1240.9
+    },
+    "rrf_ms": {
+      "P50": 0.11,
+      "P70": 0.11,
+      "P100": 0.2
+    },
+    "total_ms": {
+      "P50": 928.61,
+      "P70": 1117.47,
+      "P100": 2059.6
+    }
+  },
+  "target_ms": 200,
+  "meets_target": false,
+  "note": "retrieval-stage only; excludes STT + LLM; no <200ms claim"
+}

@@ -1,0 +1,46 @@
+{
+  "n_queries": 100,
+  "seed": 12345,
+  "query_type_coverage": {
+    "DESCRIPTION": 62,
+    "ENTITY": 9,
+    "NUMERIC": 19,
+    "PERSON": 2,
+    "LOCATION": 8
+  },
+  "ranker": "dense (exact cosine bruteforce == Qdrant cosine)",
+  "device": "cuda",
+  "dtype": "float16",
+  "strategies": {
+    "fixed": {
+      "recall": {
+        "R@1": 0.26,
+        "R@5": 0.64,
+        "R@10": 0.72
+      },
+      "elapsed_s": 29.5,
+      "per_query_avg_ms": 295.5
+    },
+    "semantic": {
+      "recall": {
+        "R@1": 0.26,
+        "R@5": 0.64,
+        "R@10": 0.72
+      },
+      "elapsed_s": 34.8,
+      "per_query_avg_ms": 347.9
+    },
+    "adaptive": {
+      "recall": {
+        "R@1": 0.26,
+        "R@5": 0.64,
+        "R@10": 0.72
+      },
+      "elapsed_s": 32.0,
+      "per_query_avg_ms": 320.5
+    }
+  },
+  "winner": "tie (all three strategies identical recall)",
+  "recommended": "adaptive",
+  "note": "All three strategies produce identical dense Recall@1/5/10 (0.26/0.64/0.72). Chunking strategy is recall-neutral for dense retrieval on this subset. Recommended: adaptive."
+}

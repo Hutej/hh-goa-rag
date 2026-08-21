@@ -1,0 +1,17 @@
+{
+  "endpoint": "POST /api/query",
+  "input": {"text": "मैनहट्टन परियोजना क्या थी?", "top_k": 5},
+  "status": 200,
+  "answer": "मैनहट्टन परियोजना द्वितीय विश्व युद्ध के दौरान (1942-1946) संयुक्त राज्य अमेरिका के नेतृत्व में यूनाइटेड किंगडम और कनाडा के समर्थन से चलाया गया एक अनुसंधान और विकास उपक्रम था जिसने पहले परमाणु हथियारों का निर्माण किया। इसका नेतृत्व मेजर जनरल लेस्ली ग्रोव्स के अंतर्गत यू.एस. आर्मी कॉर्प्स ऑफ इंजीनियर्स ने किया और रॉबर्ट ओपेनहाइमर ने लॉस अलामोस प्रयोगशाला का निदेशकत्व किया।",
+  "language": null,
+  "sources": [
+    {"chunk_id": "hi_1185869_p3_c0", "document_id": "hi_1185869_p3", "score": 0.032266, "text": "..."},
+    {"chunk_id": "hi_1185869_p7_c0", "document_id": "hi_1185869_p7", "score": 0.032258, "text": "..."},
+    {"chunk_id": "hi_1185869_p2_c0", "document_id": "hi_1185869_p2", "score": "..."},
+    {"chunk_id": "hi_1185869_p8_c0", "document_id": "hi_1185869_p8", "score": "..."},
+    {"chunk_id": "hi_1185869_p0_c0", "document_id": "hi_1185869_p0", "score": "..."}
+  ],
+  "timing_ms": {"stt_ms": 0.0, "encode_ms": 184.5, "dense_ms": 299.2, "bm25_ms": 2340.2, "rrf_ms": 1.4, "generation_ms": 9995.4, "total_ms": 50797.1},
+  "guardrail_triggered": false,
+  "note": "Real end-to-end query through the FastAPI backend (CPU, cold start). All stages measured. BM25 cold-start inflated (first index load); generation ~10s is the LLM API round-trip. Warm steady-state retrieval is ~929ms (see results/benchmark). Every answer fact traces to the retrieved sources."
+}

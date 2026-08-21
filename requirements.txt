@@ -14,3 +14,7 @@ pytest
 sarvamai
 openai
 qdrant-client
+rank-bm25
+fastapi
+uvicorn[standard]
+python-multipart

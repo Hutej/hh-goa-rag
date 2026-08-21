@@ -1,0 +1,49 @@
+{
+  "endpoint": "POST /api/query",
+  "input": {
+    "text": "मैनहट्टन परियोजना क्या थी?",
+    "top_k": 5
+  },
+  "status": 200,
+  "condition": "WARM run (server already loaded BGE-M3 + BM25; CPU)",
+  "answer_excerpt": "मैनहट्टन परियोजना द्वितीय विश्व युद्ध के दौरान (1942-1946) संयुक्त राज्य अमेरिका के नेतृत्व में यूनाइटेड किंगडम और कनाडा…",
+  "language": null,
+  "sources": [
+    {
+      "chunk_id": "hi_1185869_p3_c0",
+      "document_id": "hi_1185869_p3",
+      "score": 0.020362
+    },
+    {
+      "chunk_id": "hi_1185869_p7_c0",
+      "document_id": "hi_1185869_p7",
+      "score": 0.020161
+    },
+    {
+      "chunk_id": "hi_1185869_p2_c0",
+      "document_id": "hi_1185869_p2",
+      "score": 0.019719
+    },
+    {
+      "chunk_id": "hi_1185869_p8_c0",
+      "document_id": "hi_1185869_p8",
+      "score": 0.019413
+    },
+    {
+      "chunk_id": "hi_1185869_p0_c0",
+      "document_id": "hi_1185869_p0",
+      "score": 0.01925
+    }
+  ],
+  "timing_ms": {
+    "stt_ms": 0.0,
+    "encode_ms": 421.1,
+    "dense_ms": 1162.2,
+    "bm25_ms": 737.3,
+    "rrf_ms": 0.2,
+    "generation_ms": 112.0,
+    "total_ms": 10788.4
+  },
+  "guardrail_triggered": false,
+  "note": "Warm steady-state: retrieval encode+dense+bm25+rrf. BM25 still the bottleneck (~1140ms, full 204k index). Generation ~87ms here is a fast LLM round-trip (varies by provider load). Compare cold run in results/demo/e2e_text_query.json."
+}
