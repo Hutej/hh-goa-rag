@@ -18,6 +18,14 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
+# Legacy module: evaluation.py targets the old single-language Qdrant/BM25 stack.
+# Current evaluation lives in scripts/evaluate_retrieval.py (multilingual +
+# cross-lingual). Skip when the legacy dependencies are not installed.
+pytest.importorskip("qdrant_client",
+                    reason="legacy dependency; see requirements-build.txt")
+pytest.importorskip("rank_bm25",
+                    reason="legacy dependency; see requirements-build.txt")
+
 import backend.rag.evaluation as ev
 
 

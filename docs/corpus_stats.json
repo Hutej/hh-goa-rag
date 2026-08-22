@@ -1,0 +1,28 @@
+{
+  "split": "validation",
+  "rows_per_language": 20000,
+  "languages": [
+    {
+      "lang": "mr",
+      "name": "Marathi",
+      "shard": "data\\raw\\MSMARCO-XI\\validation\\marval.parquet",
+      "passage_column": "Translated_passages",
+      "source_rows": 20000,
+      "passages": 199884,
+      "avg_passages_per_row": 9.99,
+      "selected_passages": 12939,
+      "queries_with_selected": 12335,
+      "unique_queries": 19999,
+      "unique_documents": 199884,
+      "skipped_empty": 0,
+      "misaligned_rows": 0,
+      "repeated_query_id_rows": 1,
+      "dominant_script": "DEVANAGARI",
+      "expected_script": "Devanagari",
+      "script_ok": true,
+      "out": "data\\processed\\passages\\mr.parquet",
+      "size_mb": 37.3
+    }
+  ],
+  "parallel_overlap": {}
+}

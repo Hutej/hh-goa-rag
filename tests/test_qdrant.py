@@ -21,6 +21,13 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
+# Legacy module: superseded by backend/rag/dense.py (in-process FAISS HNSW).
+# Embedded Qdrant turned out to be a pure-Python brute-force scan that ignores
+# hnsw_config, and the client was reopened per request. `qdrant-client` is now a
+# build-time-only dependency, so skip rather than fail when it is absent.
+pytest.importorskip("qdrant_client",
+                    reason="legacy dependency; superseded by dense.py (FAISS)")
+
 import backend.rag.qdrant_index as qi
 
 

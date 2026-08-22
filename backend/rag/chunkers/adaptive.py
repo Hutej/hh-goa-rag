@@ -50,25 +50,40 @@ PATH_MEDIUM = "medium"
 PATH_LONG = "long"
 
 
-def adaptive_path(text: str) -> str:
+def adaptive_path(text: str, short_max: int | None = None,
+                  medium_max: int | None = None) -> str:
     """Return the routing path name for ``text`` without chunking it."""
+    s = SHORT_MAX if short_max is None else int(short_max)
+    m = MEDIUM_MAX if medium_max is None else int(medium_max)
     n = count_tokens(text)
-    if n <= SHORT_MAX:
+    if n <= s:
         return PATH_SHORT
-    if n <= MEDIUM_MAX:
+    if n <= m:
         return PATH_MEDIUM
     return PATH_LONG
 
 
-def split_adaptive(text: str) -> list[str]:
-    """Route ``text`` by length and split with the chosen sub-strategy."""
+def split_adaptive(text: str, short_max: int | None = None,
+                   medium_max: int | None = None,
+                   semantic_max: int | None = None) -> list[str]:
+    """Route ``text`` by length and split with the chosen sub-strategy.
+
+    The three thresholds are parameters rather than fixed constants because the
+    right values are language-dependent. The defaults were calibrated on the
+    Hindi length distribution; ``scripts/measure_lengths.py`` recomputes them
+    per language, and English in particular sits at a different distribution
+    both because Latin script tokenizes more compactly and because the English
+    passages are the *original* MS MARCO text rather than a translation.
+    """
     if not text or not text.strip():
         return []
+    s = SHORT_MAX if short_max is None else int(short_max)
+    m = MEDIUM_MAX if medium_max is None else int(medium_max)
     n = count_tokens(text)
-    if n <= SHORT_MAX:
+    if n <= s:
         return [text]
-    if n <= MEDIUM_MAX:
-        return split_semantic(text)
+    if n <= m:
+        return split_semantic(text, max_tokens=semantic_max)
     return split_fixed(text)
 
 

@@ -1,0 +1,50 @@
+{"reason": "ok", "grounded": true, "ms": 2308.6, "confidence": 1.0, "groundedness": 0.875, "query": "when was power rangers released in europe"}
+{"reason": "ok", "grounded": true, "ms": 984.8, "confidence": 1.0, "groundedness": 1.0, "query": "how to find the surface area of a triangle"}
+{"reason": "ok", "grounded": true, "ms": 1142.1, "confidence": 1.0, "groundedness": 0.875, "query": "what is megatron called"}
+{"reason": "ok", "grounded": true, "ms": 1369.1, "confidence": 1.0, "groundedness": 0.8636, "query": "what is that cluster of stars near taurus"}
+{"reason": "ok", "grounded": true, "ms": 919.5, "confidence": 1.0, "groundedness": 0.9167, "query": "begher republic  definition"}
+{"reason": "ok", "grounded": true, "ms": 1231.5, "confidence": 1.0, "groundedness": 0.6, "query": "the ant and the dove fable"}
+{"reason": "model_reported_insufficient", "grounded": false, "ms": 1023.0, "confidence": 0.0, "groundedness": 0.0, "query": "how is cultural transmission theory related to the concentric zone hypothesis? ."}
+{"reason": "model_reported_insufficient", "grounded": false, "ms": 994.7, "confidence": 0.0, "groundedness": 0.0, "query": "how to request to uscis to cancel visa"}
+{"reason": "model_reported_insufficient", "grounded": false, "ms": 1195.4, "confidence": 0.5, "groundedness": 0.0, "query": "how long does it take for government college loans to be issued"}
+{"reason": "ok", "grounded": true, "ms": 977.8, "confidence": 1.0, "groundedness": 1.0, "query": "what is providing customer service"}
+{"reason": "model_reported_insufficient", "grounded": false, "ms": 878.2, "confidence": 0.0, "groundedness": 0.0, "query": "what is the astrolabe used for today?"}
+{"reason": "ok", "grounded": true, "ms": 1248.6, "confidence": 1.0, "groundedness": 0.7647, "query": "how do cyber attacks happen"}
+{"reason": "model_reported_insufficient", "grounded": false, "ms": 1104.1, "confidence": 0.0, "groundedness": 0.0, "query": "what the max units in total war warhammer"}
+{"reason": "ok", "grounded": true, "ms": 1408.6, "confidence": 1.0, "groundedness": 0.8462, "query": "where all the folded mountains located"}
+{"reason": "model_reported_insufficient", "grounded": false, "ms": 1017.9, "confidence": 0.0, "groundedness": 0.0, "query": "how old would dean martin be"}
+{"reason": "model_reported_insufficient", "grounded": false, "ms": 1138.3, "confidence": 0.0, "groundedness": 0.0, "query": "how to cook in the oven a 1.36 lb beef sirloin steak"}
+{"reason": "generation_failed: gemini/gemini-3.5-flash-lite failed after 3 attempt(s): Error code: 429 - [{'err", "grounded": false, "ms": 6519.1, "confidence": 0.0, "groundedness": 0.0, "query": "can thinning vocal cords cause hoarseness"}
+{"reason": "generation_failed: gemini/gemini-3.5-flash-lite failed after 3 attempt(s): Error code: 429 - [{'err", "grounded": false, "ms": 6552.0, "confidence": 0.0, "groundedness": 0.0, "query": "what is the role as a writer in society"}
+{"reason": "generation_failed: gemini/gemini-3.5-flash-lite failed after 3 attempt(s): Error code: 429 - [{'err", "grounded": false, "ms": 8356.0, "confidence": 0.0, "groundedness": 0.0, "query": "subcortical band heterotopia symptoms"}
+{"reason": "generation_failed: gemini/gemini-3.5-flash-lite failed after 3 attempt(s): Error code: 429 - [{'err", "grounded": false, "ms": 6195.6, "confidence": 0.0, "groundedness": 0.0, "query": "do dolphins have the smell sense"}
+{"reason": "generation_failed: gemini/gemini-3.5-flash-lite failed after 3 attempt(s): Error code: 429 - [{'err", "grounded": false, "ms": 7478.5, "confidence": 0.0, "groundedness": 0.0, "query": "what is the transpiration stream"}
+{"reason": "model_reported_insufficient", "grounded": false, "ms": 8490.5, "confidence": 0.0, "groundedness": 0.0, "query": "why did laozi say that idea"}
+{"reason": "ok", "grounded": true, "ms": 1542.9, "confidence": 0.9, "groundedness": 0.6667, "query": "how long do you have to keep paperwork"}
+{"reason": "ok", "grounded": true, "ms": 1346.3, "confidence": 1.0, "groundedness": 0.8571, "query": "how to detangle curly synthetic hair"}
+{"reason": "ok", "grounded": true, "ms": 1140.7, "confidence": 0.9, "groundedness": 0.8889, "query": "how long before a collection agency reports to the credit bureau"}
+{"reason": "ok", "grounded": true, "ms": 1128.5, "confidence": 0.9, "groundedness": 0.6667, "query": "do migraine headaches cause one to lose their balance?"}
+{"reason": "ok", "grounded": true, "ms": 1982.0, "confidence": 1.0, "groundedness": 0.75, "query": "what is the name of the material that the pile yarn/fiber tufts are sewn or inserted into?"}
+{"reason": "ok", "grounded": true, "ms": 1249.3, "confidence": 1.0, "groundedness": 0.8846, "query": "what is peninsula clean energy"}
+{"reason": "model_reported_insufficient", "grounded": false, "ms": 1141.6, "confidence": 0.5, "groundedness": 0.0, "query": "what is zero glycemic"}
+{"reason": "ok", "grounded": true, "ms": 912.7, "confidence": 1.0, "groundedness": 0.75, "query": "how can one do SIM business"}
+{"reason": "ok", "grounded": true, "ms": 986.6, "confidence": 1.0, "groundedness": 0.9091, "query": "which plants live in the sonoran desert?"}
+{"reason": "model_reported_insufficient", "grounded": false, "ms": 1019.6, "confidence": 0.0, "groundedness": 0.0, "query": "when did trapped on the ice happen"}
+{"reason": "ok", "grounded": true, "ms": 1229.0, "confidence": 1.0, "groundedness": 0.7895, "query": "what makes marsala wine special"}
+{"reason": "ok", "grounded": true, "ms": 948.3, "confidence": 1.0, "groundedness": 1.0, "query": "usf admissions office phone number"}
+{"reason": "model_reported_insufficient", "grounded": false, "ms": 1185.7, "confidence": 0.8, "groundedness": 0.0, "query": "gas dryers running cost"}
+{"reason": "model_reported_insufficient", "grounded": false, "ms": 991.0, "confidence": 0.0, "groundedness": 0.0, "query": "cost of an average wedding cake"}
+{"reason": "model_reported_insufficient", "grounded": false, "ms": 883.8, "confidence": 0.0, "groundedness": 0.0, "query": "can grapefruit essential oils help herpes?"}
+{"reason": "generation_failed: gemini/gemini-3.5-flash-lite failed after 3 attempt(s): Error code: 429 - [{'err", "grounded": false, "ms": 5420.0, "confidence": 0.0, "groundedness": 0.0, "query": "how do you get picked for the grand jury in oregon"}
+{"reason": "generation_failed: gemini/gemini-3.5-flash-lite failed after 3 attempt(s): Error code: 429 - [{'err", "grounded": false, "ms": 6933.2, "confidence": 0.0, "groundedness": 0.0, "query": "what temperature for rattlesnake"}
+{"reason": "generation_failed: gemini/gemini-3.5-flash-lite failed after 3 attempt(s): Error code: 429 - [{'err", "grounded": false, "ms": 7190.3, "confidence": 0.0, "groundedness": 0.0, "query": "what is the atoms and molecules full of"}
+{"reason": "generation_failed: gemini/gemini-3.5-flash-lite failed after 3 attempt(s): Error code: 429 - [{'err", "grounded": false, "ms": 7988.9, "confidence": 0.0, "groundedness": 0.0, "query": "what is zone 2 of thoracic aneurysm"}
+{"reason": "generation_failed: gemini/gemini-3.5-flash-lite failed after 3 attempt(s): Error code: 429 - [{'err", "grounded": false, "ms": 6615.5, "confidence": 0.0, "groundedness": 0.0, "query": "c side table"}
+{"reason": "ok", "grounded": true, "ms": 3739.8, "confidence": 1.0, "groundedness": 0.9091, "query": "compatibility definition"}
+{"reason": "ok", "grounded": true, "ms": 1209.9, "confidence": 1.0, "groundedness": 1.0, "query": "what is chrome mean"}
+{"reason": "ok", "grounded": true, "ms": 1319.2, "confidence": 1.0, "groundedness": 0.6452, "query": "best way to level up your archery in skyrim"}
+{"reason": "model_reported_insufficient", "grounded": false, "ms": 962.1, "confidence": 0.0, "groundedness": 0.0, "query": "what is the minimum acceptable blood pressure 9 year old girl broken glass"}
+{"reason": "ok", "grounded": true, "ms": 973.2, "confidence": 1.0, "groundedness": 1.0, "query": "how fast is a kilometer in miles"}
+{"reason": "ok", "grounded": true, "ms": 1070.5, "confidence": 1.0, "groundedness": 0.8571, "query": "what is the size and weight of a whitetail deer"}
+{"reason": "ok", "grounded": true, "ms": 1365.8, "confidence": 0.9, "groundedness": 0.6522, "query": "who owns the w hotel"}
+{"reason": "ok", "grounded": true, "ms": 1170.5, "confidence": 1.0, "groundedness": 0.9167, "query": "cytopathology definition"}

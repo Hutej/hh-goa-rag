@@ -1,110 +1,34 @@
 {
-  "fixed": {
-    "strategy": "fixed",
-    "input_passages": 199590,
-    "output_chunks": 204932,
-    "chunks_per_passage": {
-      "avg": 1.0268,
-      "median": 1,
-      "min": 1,
-      "max": 37
-    },
-    "chunk_token_count": {
-      "avg": 100.43,
-      "median": 89,
-      "min": 1,
-      "max": 258,
-      "p50": 89,
-      "p90": 162,
-      "p95": 194
-    },
-    "chunks_exceeding_max": 223,
-    "configured_max_tokens": 256,
-    "empty_chunks": 0,
-    "passages_split_into_multiple": 964,
-    "pct_split": 0.483,
-    "passages_one_chunk": 198626,
-    "pct_one_chunk": 99.517,
-    "passages_with_zero_chunks": 0,
-    "processing_seconds": 88.76,
-    "throughput_passages_per_s": 2248.6,
-    "throughput_chunks_per_s": 2308.8,
-    "output_path": "/home/hutej/System hang/hh-goa-rag/data/processed/chunks/fixed.parquet",
-    "output_size_bytes": 64557227,
-    "output_size_human": "61.57 MiB",
-    "row_group_chunks": 4000,
-    "peak_rss_mb": 1247.0
-  },
-  "semantic": {
-    "strategy": "semantic",
-    "input_passages": 199590,
-    "output_chunks": 203621,
-    "chunks_per_passage": {
-      "avg": 1.0202,
-      "median": 1,
-      "min": 1,
-      "max": 38
-    },
-    "chunk_token_count": {
-      "avg": 100.67,
-      "median": 89,
-      "min": 1,
-      "max": 384,
-      "p50": 89,
-      "p90": 160,
-      "p95": 191
-    },
-    "chunks_exceeding_max": 0,
-    "configured_max_tokens": 384,
-    "empty_chunks": 0,
-    "passages_split_into_multiple": 423,
-    "pct_split": 0.212,
-    "passages_one_chunk": 199167,
-    "pct_one_chunk": 99.788,
-    "passages_with_zero_chunks": 0,
-    "processing_seconds": 93.09,
-    "throughput_passages_per_s": 2144.0,
-    "throughput_chunks_per_s": 2187.3,
-    "output_path": "/home/hutej/System hang/hh-goa-rag/data/processed/chunks/semantic.parquet",
-    "output_size_bytes": 64619038,
-    "output_size_human": "61.63 MiB",
-    "row_group_chunks": 4000,
-    "peak_rss_mb": 1247.0
-  },
-  "adaptive": {
-    "strategy": "adaptive",
-    "input_passages": 199590,
-    "output_chunks": 204390,
-    "chunks_per_passage": {
-      "avg": 1.024,
-      "median": 1,
-      "min": 1,
-      "max": 37
-    },
-    "chunk_token_count": {
-      "avg": 100.61,
-      "median": 89,
-      "min": 1,
-      "max": 382,
-      "p50": 89,
-      "p90": 162,
-      "p95": 194
-    },
-    "chunks_exceeding_max": 0,
-    "configured_max_tokens": 384,
-    "empty_chunks": 0,
-    "passages_split_into_multiple": 423,
-    "pct_split": 0.212,
-    "passages_one_chunk": 199167,
-    "pct_one_chunk": 99.788,
-    "passages_with_zero_chunks": 0,
-    "processing_seconds": 98.46,
-    "throughput_passages_per_s": 2027.2,
-    "throughput_chunks_per_s": 2075.9,
-    "output_path": "/home/hutej/System hang/hh-goa-rag/data/processed/chunks/adaptive.parquet",
-    "output_size_bytes": 64532242,
-    "output_size_human": "61.54 MiB",
-    "row_group_chunks": 4000,
-    "peak_rss_mb": 1247.0
-  }
+  "tokenizer": "intfloat/multilingual-e5-small",
+  "runs": [
+    {
+      "lang": "mr",
+      "strategy": "adaptive",
+      "passages": 199884,
+      "chunks": 213104,
+      "chunks_per_passage": 1.0661,
+      "empty_passages": 0,
+      "single_chunk_pct": 93.39,
+      "routes": {
+        "short": 160544,
+        "medium": 38368,
+        "long": 972
+      },
+      "thresholds": {
+        "short_max": 112,
+        "medium_max": 256,
+        "semantic_max": 168,
+        "source": "measured"
+      },
+      "chunk_tokens_sampled": {
+        "n": 20000,
+        "median": 85.0,
+        "p95": 163.0,
+        "max": 257
+      },
+      "seconds": 64.4,
+      "out": "data\\processed\\chunks\\adaptive\\mr.parquet",
+      "size_mb": 37.1
+    }
+  ]
 }

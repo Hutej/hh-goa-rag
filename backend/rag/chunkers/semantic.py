@@ -45,19 +45,25 @@ MAX_TOKENS = 384
 STRATEGY = "semantic"
 
 
-def split_semantic(text: str) -> list[str]:
-    """Sentence-aware split of ``text`` into chunks <= ``MAX_TOKENS`` tokens.
+def split_semantic(text: str, max_tokens: int | None = None) -> list[str]:
+    """Sentence-aware split of ``text`` into chunks <= ``max_tokens`` tokens.
+
+    ``max_tokens`` defaults to ``MAX_TOKENS`` but is overridable so the adaptive
+    strategy can pass a per-language budget: an identical token budget holds
+    noticeably less content in Devanagari than in Latin script, because the
+    sentencepiece vocabulary fragments Indic text more aggressively.
 
     Returns the ordered list of exact-substring chunks.
     """
     if not text or not text.strip():
         return []
+    limit = MAX_TOKENS if max_tokens is None else int(max_tokens)
     sentences = split_sentences(text)
     if not sentences:
         return []
 
     # Fast path: whole passage fits in one chunk.
-    if count_tokens(text) <= MAX_TOKENS:
+    if count_tokens(text) <= limit:
         return [text]
 
     pieces: list[str] = []
@@ -73,14 +79,14 @@ def split_semantic(text: str) -> list[str]:
 
     for sent in sentences:
         stoks = count_tokens(sent)
-        if stoks > MAX_TOKENS:
+        if stoks > limit:
             # Close the current chunk first (flush), then split the oversized
             # sentence with the fixed-token fallback.
             flush()
             for piece in split_fixed(sent):
                 pieces.append(piece)
             continue
-        if cur_tokens + stoks > MAX_TOKENS:
+        if cur_tokens + stoks > limit:
             # adding this sentence would overflow -> close current chunk
             flush()
         cur.append(sent)

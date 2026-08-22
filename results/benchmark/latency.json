@@ -1,0 +1,407 @@
+{
+  "target_ms": 200,
+  "seed": 12345,
+  "cache_disabled": true,
+  "queries_per_language": 50,
+  "config": {
+    "languages": [
+      "hi",
+      "en",
+      "mr"
+    ],
+    "split": "validation",
+    "chunk_strategy": "adaptive",
+    "encoder": {
+      "model": "intfloat/multilingual-e5-small",
+      "dim": 384,
+      "backend": "onnx",
+      "precision": "int8",
+      "device": "auto"
+    },
+    "dense": {
+      "backend": "hnswlib",
+      "m": 32,
+      "ef_search": 64
+    },
+    "retrieval": {
+      "top_k": 5,
+      "dense_k": 20,
+      "sparse_k": 20,
+      "rrf_k": 60,
+      "dense_weight": 1.0,
+      "sparse_weight": 0.1,
+      "generation_k": 3,
+      "max_per_document": 2
+    },
+    "guardrails": {
+      "min_relevance": 0.005,
+      "min_cosine": 0.8,
+      "min_groundedness": 0.45
+    },
+    "generation": {
+      "provider": "gemini",
+      "model": "gemini-3.5-flash-lite",
+      "max_tokens": 160,
+      "timeout_s": 12.0,
+      "stream": true
+    },
+    "stt": {
+      "provider": "sarvam",
+      "language": "hi-IN"
+    }
+  },
+  "warmup": {
+    "retriever_ms": 6528.5,
+    "llm_warmup": {
+      "warmed": true,
+      "ms": 2005.3
+    },
+    "total_ms": 10835.4
+  },
+  "tier_a_and_b": {
+    "cold_start_ms": {
+      "encode_ms": 4.36,
+      "dense_ms": 2.43,
+      "sparse_ms": 12.77,
+      "fuse_ms": 0.17,
+      "hydrate_ms": 0.1,
+      "retrieval_ms": 19.88,
+      "guard_ms": 0.15,
+      "extractive_ms": 0.36,
+      "first_answer_ms": 20.42
+    },
+    "pooled": {
+      "encode_ms": {
+        "P50": 4.37,
+        "P70": 4.84,
+        "P100": 9.7,
+        "mean": 4.56,
+        "n": 150
+      },
+      "dense_ms": {
+        "P50": 2.61,
+        "P70": 2.84,
+        "P100": 5.9,
+        "mean": 2.67,
+        "n": 150
+      },
+      "sparse_ms": {
+        "P50": 14.38,
+        "P70": 16.85,
+        "P100": 62.72,
+        "mean": 14.2,
+        "n": 150
+      },
+      "fuse_ms": {
+        "P50": 0.18,
+        "P70": 0.2,
+        "P100": 0.49,
+        "mean": 0.19,
+        "n": 150
+      },
+      "hydrate_ms": {
+        "P50": 0.08,
+        "P70": 0.09,
+        "P100": 0.25,
+        "mean": 0.08,
+        "n": 150
+      },
+      "retrieval_ms": {
+        "P50": 22.05,
+        "P70": 25.18,
+        "P100": 71.73,
+        "mean": 21.77,
+        "n": 150
+      },
+      "guard_ms": {
+        "P50": 0.12,
+        "P70": 0.13,
+        "P100": 0.38,
+        "mean": 0.12,
+        "n": 150
+      },
+      "extractive_ms": {
+        "P50": 0.22,
+        "P70": 0.25,
+        "P100": 0.71,
+        "mean": 0.23,
+        "n": 150
+      },
+      "first_answer_ms": {
+        "P50": 22.57,
+        "P70": 25.65,
+        "P100": 72.09,
+        "mean": 22.17,
+        "n": 150
+      }
+    },
+    "per_language": {
+      "hi": {
+        "encode_ms": {
+          "P50": 4.53,
+          "P70": 5.05,
+          "P100": 6.64,
+          "mean": 4.68,
+          "n": 50
+        },
+        "dense_ms": {
+          "P50": 2.98,
+          "P70": 3.49,
+          "P100": 5.9,
+          "mean": 3.09,
+          "n": 50
+        },
+        "sparse_ms": {
+          "P50": 16.59,
+          "P70": 19.96,
+          "P100": 55.58,
+          "mean": 18.34,
+          "n": 50
+        },
+        "fuse_ms": {
+          "P50": 0.18,
+          "P70": 0.21,
+          "P100": 0.28,
+          "mean": 0.19,
+          "n": 50
+        },
+        "hydrate_ms": {
+          "P50": 0.09,
+          "P70": 0.1,
+          "P100": 0.25,
+          "mean": 0.09,
+          "n": 50
+        },
+        "retrieval_ms": {
+          "P50": 25.18,
+          "P70": 28.21,
+          "P100": 65.72,
+          "mean": 26.47,
+          "n": 50
+        },
+        "guard_ms": {
+          "P50": 0.12,
+          "P70": 0.13,
+          "P100": 0.38,
+          "mean": 0.13,
+          "n": 50
+        },
+        "extractive_ms": {
+          "P50": 0.25,
+          "P70": 0.29,
+          "P100": 0.57,
+          "mean": 0.27,
+          "n": 50
+        },
+        "first_answer_ms": {
+          "P50": 25.65,
+          "P70": 28.49,
+          "P100": 66.18,
+          "mean": 26.91,
+          "n": 50
+        }
+      },
+      "en": {
+        "encode_ms": {
+          "P50": 4.18,
+          "P70": 4.51,
+          "P100": 9.7,
+          "mean": 4.41,
+          "n": 50
+        },
+        "dense_ms": {
+          "P50": 2.46,
+          "P70": 2.72,
+          "P100": 3.36,
+          "mean": 2.43,
+          "n": 50
+        },
+        "sparse_ms": {
+          "P50": 5.65,
+          "P70": 7.98,
+          "P100": 17.14,
+          "mean": 7.19,
+          "n": 50
+        },
+        "fuse_ms": {
+          "P50": 0.18,
+          "P70": 0.2,
+          "P100": 0.49,
+          "mean": 0.2,
+          "n": 50
+        },
+        "hydrate_ms": {
+          "P50": 0.06,
+          "P70": 0.07,
+          "P100": 0.18,
+          "mean": 0.07,
+          "n": 50
+        },
+        "retrieval_ms": {
+          "P50": 12.78,
+          "P70": 14.4,
+          "P100": 29.26,
+          "mean": 14.37,
+          "n": 50
+        },
+        "guard_ms": {
+          "P50": 0.11,
+          "P70": 0.13,
+          "P100": 0.17,
+          "mean": 0.12,
+          "n": 50
+        },
+        "extractive_ms": {
+          "P50": 0.21,
+          "P70": 0.23,
+          "P100": 0.54,
+          "mean": 0.22,
+          "n": 50
+        },
+        "first_answer_ms": {
+          "P50": 13.08,
+          "P70": 14.8,
+          "P100": 29.56,
+          "mean": 14.74,
+          "n": 50
+        }
+      },
+      "mr": {
+        "encode_ms": {
+          "P50": 4.39,
+          "P70": 4.83,
+          "P100": 7.31,
+          "mean": 4.59,
+          "n": 50
+        },
+        "dense_ms": {
+          "P50": 2.41,
+          "P70": 2.73,
+          "P100": 3.49,
+          "mean": 2.49,
+          "n": 50
+        },
+        "sparse_ms": {
+          "P50": 15.32,
+          "P70": 19.35,
+          "P100": 62.72,
+          "mean": 17.06,
+          "n": 50
+        },
+        "fuse_ms": {
+          "P50": 0.18,
+          "P70": 0.2,
+          "P100": 0.32,
+          "mean": 0.19,
+          "n": 50
+        },
+        "hydrate_ms": {
+          "P50": 0.08,
+          "P70": 0.09,
+          "P100": 0.16,
+          "mean": 0.09,
+          "n": 50
+        },
+        "retrieval_ms": {
+          "P50": 23.5,
+          "P70": 25.67,
+          "P100": 71.73,
+          "mean": 24.49,
+          "n": 50
+        },
+        "guard_ms": {
+          "P50": 0.11,
+          "P70": 0.13,
+          "P100": 0.21,
+          "mean": 0.12,
+          "n": 50
+        },
+        "extractive_ms": {
+          "P50": 0.21,
+          "P70": 0.24,
+          "P100": 0.71,
+          "mean": 0.22,
+          "n": 50
+        },
+        "first_answer_ms": {
+          "P50": 23.87,
+          "P70": 25.97,
+          "P100": 72.09,
+          "mean": 24.86,
+          "n": 50
+        }
+      }
+    }
+  },
+  "tier_c": {
+    "generation_ms": {
+      "P50": 939.06,
+      "P70": 973.39,
+      "P100": 1104.27,
+      "mean": 954.1,
+      "n": 15
+    },
+    "total_ms": {
+      "P50": 949.97,
+      "P70": 999.83,
+      "P100": 1125.23,
+      "mean": 974.07,
+      "n": 15
+    },
+    "per_language_total_ms": {
+      "mr": {
+        "P50": 949.06,
+        "P70": 971.51,
+        "P100": 1005.15,
+        "mean": 948.72,
+        "n": 4
+      },
+      "en": {
+        "P50": 978.54,
+        "P70": 1036.09,
+        "P100": 1077.66,
+        "mean": 983.12,
+        "n": 7
+      },
+      "hi": {
+        "P50": 941.99,
+        "P70": 967.49,
+        "P100": 1125.23,
+        "mean": 983.57,
+        "n": 4
+      }
+    },
+    "outcomes": {
+      "generated": 14,
+      "refused": 1,
+      "failed": 0
+    },
+    "provider": {
+      "provider": "gemini",
+      "model": "gemini-3.5-flash-lite",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+      "max_tokens": 160,
+      "timeout_s": 12.0,
+      "max_retries": 2,
+      "warm": true
+    }
+  },
+  "stt_excluded_from_tiers": {
+    "file": "voice_hi_manhattan.wav",
+    "latency_ms": {
+      "P50": 485.9,
+      "P70": 609.18,
+      "P100": 794.12,
+      "mean": 539.85,
+      "n": 3
+    }
+  },
+  "verdict": {
+    "tier_a_p50": 22.05,
+    "tier_a_p100": 71.73,
+    "tier_b_p50": 22.57,
+    "tier_b_p100": 72.09,
+    "tier_b_meets_target_at_p100": true,
+    "tier_c_p50": 949.97
+  }
+}

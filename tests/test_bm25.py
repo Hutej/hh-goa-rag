@@ -18,6 +18,13 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
+# Legacy module: superseded by backend/rag/sparse.py (bm25s), which replaced
+# rank_bm25 after it measured as the pipeline's #1 latency bottleneck (P50
+# 398 ms). `rank-bm25` is now a build-time-only dependency, kept for the
+# ranking-parity check, so skip rather than fail when it is absent.
+pytest.importorskip("rank_bm25",
+                    reason="legacy dependency; see requirements-build.txt")
+
 import backend.rag.bm25 as bm25mod
 from backend.rag.bm25 import BM25Index, tokenize
 

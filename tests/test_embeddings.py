@@ -26,6 +26,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import numpy as np
 import pytest
 
+# Legacy module: superseded by backend/rag/encoder.py, which serves an int8 ONNX
+# graph via onnxruntime instead of BGE-M3 through sentence-transformers. torch is
+# no longer a dependency of this project at all, so skip when it is absent.
+pytest.importorskip("sentence_transformers",
+                    reason="legacy dependency; superseded by encoder.py (ONNX)")
+
 from backend.rag.embeddings import (
     EMBED_DIM, MODEL_NAME, select_device, _torch_dtype,
 )

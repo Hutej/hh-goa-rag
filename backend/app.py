@@ -1,128 +1,368 @@
-"""FastAPI backend for the Voice-Enabled RAG demo.
+"""FastAPI backend for the voice-enabled RAG demo.
 
-Endpoints:
-    GET  /api/health       -> {"status", "ready", "stt_available"}
-    POST /api/transcribe   -> {text, language, provider, latency_ms}   (audio file)
-    POST /api/query        -> {answer, query, language, sources, timing}  (text and/or audio)
+Endpoints
+---------
+    GET  /api/health          service state, serving config, guardrail config,
+                              live index statistics
+    POST /api/transcribe      audio -> transcript (Sarvam)
+    POST /api/query           text and/or audio -> grounded answer + sources
+                              + per-stage timings + guardrail audit trail
+    POST /api/query/stream    same, as Server-Sent Events: the extractive answer
+                              is emitted immediately, then generated tokens
 
-Components load lazily once (via backend.rag.pipeline.warmup / _Components) so
-warm requests reuse BGE-M3, BM25 and the LLM provider. Errors return a readable
-JSON message (no keys/stacktraces). Serves the static frontend from
-frontend/static/ when present.
+Concurrency note
+----------------
+The handlers are declared ``def``, not ``async def``, on purpose. The pipeline is
+synchronous CPU work (ONNX inference, FAISS search, BM25 scoring) plus blocking
+network calls. Declaring them ``async`` — as the previous version did — ran that
+work directly on the event loop, so a single in-flight query blocked every other
+request including health checks. FastAPI dispatches sync handlers to a thread
+pool, which is the correct home for this workload.
 """
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 import tempfile
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from backend.rag import guardrails as G
+from backend.rag.config import CFG
 from backend.rag.pipeline import (
-    MIN_RELEVANCE_SCORE, PipelineError, run_pipeline, transcribe_only, warmup,
+    Components, MODE_EXTRACTIVE, PipelineError, describe, run_pipeline,
+    transcribe_only, warmup,
 )
+
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s")
+log = logging.getLogger("hhgoa.api")
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "frontend" / "static"
 
+# Audio container extensions the browser or a client might send. The suffix is
+# preserved because Sarvam needs an accurate codec hint (see stt.py).
+AUDIO_EXTENSIONS = (".wav", ".mp3", ".m4a", ".webm", ".ogg", ".oga", ".aac",
+                    ".flac", ".opus")
+
+_WARMUP: dict = {"state": "pending"}
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Eagerly warm heavy components so the first user request is not cold on
-    # retrieval (BGE-M3 + BM25). LLM/STT load lazily on first use.
+    """Load indexes and pre-establish the LLM connection before serving.
+
+    Failure is non-fatal: the app still starts so ``/api/health`` can report
+    what went wrong, rather than the container dying silently on boot.
+    """
+    global _WARMUP
     try:
-        warmup()
+        t0 = time.perf_counter()
+        _WARMUP = {"state": "ok", **warmup()}
+        log.info("warmup finished in %.1fs", time.perf_counter() - t0)
     except Exception as e:
-        print(f"[startup] warmup failed (will lazy-load on first request): {e}",
-              flush=True)
+        _WARMUP = {"state": "failed", "error": str(e)[:300]}
+        log.exception("warmup failed; will retry lazily on first request")
     yield
 
 
-app = FastAPI(title="Voice-Enabled RAG", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Voice-Enabled Multilingual RAG", version="2.0.0",
+              lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # demo; permissive for local dev + static hosting
+    allow_origins=["*"],   # public read-only demo; no auth, no user data stored
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
+def _suffix(name: str | None) -> str:
+    """Container extension for an upload, defaulting to ``.webm``.
+
+    The browser records WebM/Opus, so that is the honest default. The previous
+    version defaulted to ``.wav``, which made ``stt.py`` mislabel every
+    microphone recording's codec.
+    """
+    if not name:
+        return ".webm"
+    lowered = name.lower()
+    for ext in AUDIO_EXTENSIONS:
+        if lowered.endswith(ext):
+            return ext
+    return ".webm"
+
+
+def _save_upload(upload: UploadFile) -> str:
+    with tempfile.NamedTemporaryFile(suffix=_suffix(upload.filename),
+                                     delete=False) as f:
+        f.write(upload.file.read())
+        return f.name
+
+
+# --------------------------------------------------------------------------
+# health
+# --------------------------------------------------------------------------
 @app.get("/api/health")
 def health() -> dict:
-    from backend.rag.pipeline import _Components
-    from backend.rag.bootstrap import serve_data_ready
-    ready = _Components.ready()
-    stt = _Components.stt()  # None if no SARAVAM_API_KEY
-    return {"status": "ok", "ready": ready, "stt_available": stt is not None,
-            "serve_data_present": serve_data_ready(),
-            "guardrail_min_relevance": MIN_RELEVANCE_SCORE,
-            "serving_config": {"strategy": "adaptive", "rrf_k": 60,
-                               "dense_weight": 1.0, "bm25_weight": 0.25,
-                               "dense_k": 20, "bm25_k": 20, "top_k": 5}}
+    """Service state plus the full serving configuration.
 
+    Deliberately verbose: it doubles as the reproducibility record for a live
+    deployment, so anyone can see exactly which encoder, index parameters,
+    fusion weights and guardrail thresholds produced a given answer. Contains no
+    secrets — key presence is reported as a boolean.
+    """
+    ready = Components.ready()
+    stt_ready = Components.stt() is not None
 
-@app.post("/api/transcribe")
-async def transcribe(audio: UploadFile = File(...)) -> JSONResponse:
-    try:
-        with tempfile.NamedTemporaryFile(suffix=_suffix(audio.filename),
-                                          delete=False) as f:
-            f.write(await audio.read())
-            path = f.name
+    stats = None
+    if ready:
         try:
-            return JSONResponse(transcribe_only(path))
-        finally:
-            os.unlink(path)
+            stats = Components.retriever().stats()
+        except Exception as e:  # pragma: no cover - defensive
+            stats = {"error": str(e)[:200]}
+
+    llm = Components.llm()
+    return {
+        "status": "ok" if ready else "starting",
+        "ready": ready,
+        "warmup": _WARMUP,
+        "stt_available": stt_ready,
+        "llm_available": llm is not None,
+        "llm": llm.describe() if llm is not None else None,
+        "indexes": stats,
+        **describe(),
+    }
+
+
+# --------------------------------------------------------------------------
+# transcription only
+# --------------------------------------------------------------------------
+@app.post("/api/transcribe")
+def transcribe(audio: UploadFile = File(...)) -> JSONResponse:
+    path = None
+    try:
+        path = _save_upload(audio)
+        return JSONResponse(transcribe_only(path))
     except PipelineError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
     except Exception as e:
+        log.exception("transcribe failed")
         return JSONResponse({"error": f"Transcription failed: {e}"},
                             status_code=500)
+    finally:
+        if path and os.path.exists(path):
+            os.unlink(path)
 
 
+# --------------------------------------------------------------------------
+# query
+# --------------------------------------------------------------------------
 @app.post("/api/query")
-async def query(
+def query(
     text: str | None = Form(None),
     audio: UploadFile | None = File(None),
-    top_k: int = Form(5),
+    top_k: int = Form(CFG.top_k),
+    use_llm: bool = Form(True),
 ) -> JSONResponse:
-    # save audio to a temp file if provided
+    """Full pipeline. Accepts a typed question, a recording, or both.
+
+    ``use_llm=false`` returns the extractive answer only — useful for
+    demonstrating the retrieval-core latency without a provider round trip.
+    """
     audio_path = None
-    if audio is not None and audio.filename:
-        with tempfile.NamedTemporaryFile(suffix=_suffix(audio.filename),
-                                          delete=False) as f:
-            f.write(await audio.read())
-            audio_path = f.name
     try:
+        if audio is not None and audio.filename:
+            audio_path = _save_upload(audio)
         try:
-            res = run_pipeline(audio=audio_path, query=text, top_k=top_k)
+            result = run_pipeline(audio=audio_path, query=text,
+                                  top_k=top_k, use_llm=use_llm)
         except PipelineError as e:
             return JSONResponse({"error": str(e)}, status_code=400)
-        return JSONResponse(res.to_dict())
+        return JSONResponse(result.to_dict())
+    except Exception as e:
+        log.exception("query failed")
+        return JSONResponse({"error": f"Request failed: {e}"}, status_code=500)
     finally:
         if audio_path and os.path.exists(audio_path):
             os.unlink(audio_path)
 
 
-def _suffix(name: str | None) -> str:
-    if not name:
-        return ".wav"
-    n = name.lower()
-    for ext in (".wav", ".mp3", ".m4a", ".webm", ".ogg", ".aac", ".flac"):
-        if n.endswith(ext):
-            return ext
-    return ".wav"
+def _sse(event: str, payload: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
-# serve the static frontend (SPA) if built/present
+@app.post("/api/query/stream")
+def query_stream(
+    text: str | None = Form(None),
+    audio: UploadFile | None = File(None),
+    top_k: int = Form(CFG.top_k),
+) -> StreamingResponse:
+    """Server-Sent Events version, ordered by how fast each part is available.
+
+    Event sequence:
+        ``retrieval``  sources + per-stage timings         (~20 ms)
+        ``extractive`` the grounded verbatim answer        (~21 ms)
+        ``token``      generated text deltas               (first at TTFT)
+        ``done``       final answer, guardrail audit, timings
+        ``error``      user-facing failure
+
+    The extractive answer lands roughly 30x sooner than the first generated
+    token, which is the entire reason it exists: the user has a grounded answer
+    on screen while the model is still being contacted.
+    """
+    audio_path = None
+    if audio is not None and audio.filename:
+        audio_path = _save_upload(audio)
+
+    def generate():
+        nonlocal audio_path
+        t0 = time.perf_counter()
+        try:
+            from backend.rag.extractive import extract_answer
+            from backend.rag.llm import Source
+            from backend.rag.pipeline import _public_sources, _transcribe
+
+            timing: dict = {}
+            q_text = (text or "").strip()
+            language = None
+            if not q_text:
+                if not audio_path:
+                    yield _sse("error", {"error": "No input provided. "
+                                                  "Speak a question or type one."})
+                    return
+                q_text, language = _transcribe(audio_path, timing)
+                yield _sse("transcript", {"text": q_text, "language": language,
+                                          "stt_ms": timing.get("stt_ms")})
+
+            v_input = G.check_input(q_text)
+            if v_input.blocked:
+                yield _sse("done", {"answer": v_input.message, "refused": True,
+                                    "refusal_reason": v_input.reason,
+                                    "answer_mode": "refused",
+                                    "guardrails": [v_input.to_dict()],
+                                    "sources": [], "timing": timing})
+                return
+
+            result = Components.retriever().search(q_text, top_k=top_k,
+                                                   pinned_language=language)
+            timing.update(result.timing)
+            v_retr = G.check_retrieval(result)
+            sources = _public_sources(result.hits)
+            yield _sse("retrieval", {"sources": sources, "timing": timing,
+                                     "script": result.script,
+                                     "routed_languages": result.routed_languages,
+                                     "confidence": v_retr.signals.get("confidence")})
+
+            if v_retr.blocked:
+                yield _sse("done", {"answer": v_retr.message, "refused": True,
+                                    "refusal_reason": v_retr.reason,
+                                    "answer_mode": "refused",
+                                    "guardrails": [v_input.to_dict(),
+                                                   v_retr.to_dict()],
+                                    "sources": sources, "timing": timing})
+                return
+
+            extractive = extract_answer(q_text, result.hits)
+            timing["first_answer_ms"] = round((time.perf_counter() - t0) * 1000, 2)
+            yield _sse("extractive", {"answer": extractive.answer,
+                                      "chunk_ids": extractive.chunk_ids,
+                                      "coverage": round(extractive.coverage, 3),
+                                      "first_answer_ms": timing["first_answer_ms"]})
+
+            client = Components.llm()
+            if client is None:
+                yield _sse("done", {"answer": extractive.answer,
+                                    "answer_mode": MODE_EXTRACTIVE,
+                                    "degraded": True,
+                                    "degraded_reason": "llm_not_configured",
+                                    "guardrails": [v_input.to_dict(),
+                                                   v_retr.to_dict()],
+                                    "sources": sources, "timing": timing})
+                return
+
+            gen_sources = [Source(chunk_id=h["chunk_id"],
+                                  document_id=h.get("document_id"),
+                                  score=h.get("rrf_score"),
+                                  text=h.get("text") or "", lang=h.get("lang"))
+                           for h in result.hits[:CFG.generation_k]]
+
+            ttft: list[float] = []
+            pieces: list[str] = []
+            try:
+                for piece in client.stream(
+                        q_text, gen_sources,
+                        on_first_token=lambda ms: ttft.append(ms)):
+                    pieces.append(piece)
+                    yield _sse("token", {"delta": piece})
+            except Exception as e:
+                log.warning("stream generation failed: %s", e)
+                yield _sse("done", {"answer": extractive.answer,
+                                    "answer_mode": MODE_EXTRACTIVE,
+                                    "degraded": True,
+                                    "degraded_reason": "generation_failed",
+                                    "guardrails": [v_input.to_dict(),
+                                                   v_retr.to_dict()],
+                                    "sources": sources, "timing": timing})
+                return
+
+            generated = "".join(pieces).strip()
+            if ttft:
+                timing["ttft_ms"] = round(ttft[0], 1)
+            timing["generation_ms"] = round((time.perf_counter() - t0) * 1000
+                                            - timing["first_answer_ms"], 1)
+
+            # Streaming cannot use the structured `sufficient` flag, so the
+            # groundedness check on the completed text carries that weight here.
+            v_ans = G.check_answer(generated, gen_sources, q_text)
+            guards = [v_input.to_dict(), v_retr.to_dict(), v_ans.to_dict()]
+
+            if v_ans.blocked and not extractive.is_empty:
+                yield _sse("done", {"answer": extractive.answer,
+                                    "answer_mode": MODE_EXTRACTIVE,
+                                    "degraded": True,
+                                    "degraded_reason": v_ans.reason,
+                                    "guardrails": guards, "sources": sources,
+                                    "timing": timing})
+                return
+
+            timing["total_ms"] = round((time.perf_counter() - t0) * 1000, 1)
+            yield _sse("done", {"answer": generated, "answer_mode": "generated",
+                                "refused": False, "degraded": False,
+                                "guardrails": guards, "sources": sources,
+                                "extractive_answer": extractive.answer,
+                                "timing": timing})
+        except PipelineError as e:
+            yield _sse("error", {"error": str(e)})
+        except Exception as e:
+            log.exception("stream failed")
+            yield _sse("error", {"error": f"Request failed: {e}"})
+        finally:
+            if audio_path and os.path.exists(audio_path):
+                os.unlink(audio_path)
+
+    return StreamingResponse(generate(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache",
+                                      "X-Accel-Buffering": "no"})
+
+
+# --------------------------------------------------------------------------
+# static frontend
+# --------------------------------------------------------------------------
 if STATIC_DIR.exists():
-    app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"),
-              name="assets") if (STATIC_DIR / "assets").exists() else None
+    if (STATIC_DIR / "assets").exists():
+        app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"),
+                  name="assets")
 
     @app.get("/")
     def _index() -> FileResponse:
@@ -130,10 +370,9 @@ if STATIC_DIR.exists():
 
     @app.get("/{full_path:path}")
     def _spa(full_path: str) -> FileResponse:
-        # client-side routing fallback
-        f = STATIC_DIR / full_path
-        if f.is_file():
-            return FileResponse(f)
+        candidate = STATIC_DIR / full_path
+        if candidate.is_file():
+            return FileResponse(candidate)
         return FileResponse(STATIC_DIR / "index.html")
 
 

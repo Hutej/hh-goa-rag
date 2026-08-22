@@ -54,11 +54,30 @@ class TestSarvamProviderConfig:
     """Sarvam provider config + error paths without a live API call."""
 
     def test_missing_api_key_raises(self, monkeypatch):
-        # ensure no key anywhere
+        # Both spellings must be absent: the provider accepts SARVAM_API_KEY
+        # (correct) and SARAVAM_API_KEY (this project's historic misspelling).
+        monkeypatch.delenv("SARVAM_API_KEY", raising=False)
         monkeypatch.delenv("SARAVAM_API_KEY", raising=False)
         monkeypatch.setattr("backend.rag.stt.load_env", lambda *a, **k: None)
-        with pytest.raises(STTError, match="SARAVAM_API_KEY"):
+        with pytest.raises(STTError, match="SARVAM_API_KEY"):
             SarvamSTTProvider()
+
+    def test_accepts_correctly_spelled_key(self, monkeypatch):
+        monkeypatch.delenv("SARAVAM_API_KEY", raising=False)
+        monkeypatch.setenv("SARVAM_API_KEY", "sk-fake-key")
+        monkeypatch.setattr("backend.rag.stt.load_env", lambda *a, **k: None)
+        assert SarvamSTTProvider().api_key == "sk-fake-key"
+
+    def test_codec_inferred_from_container_extension(self, monkeypatch):
+        """The browser records WebM; labelling it mp3 (the previous behaviour)
+        sent every microphone recording with the wrong codec hint."""
+        monkeypatch.setenv("SARVAM_API_KEY", "sk-fake-key")
+        monkeypatch.setattr("backend.rag.stt.load_env", lambda *a, **k: None)
+        codecs = SarvamSTTProvider.CODEC_BY_SUFFIX
+        assert codecs[".webm"] == "webm"
+        assert codecs[".wav"] == "wav"
+        assert codecs[".mp3"] == "mp3"
+        assert codecs[".ogg"] == "ogg"
 
     def test_missing_audio_file_raises(self, monkeypatch):
         monkeypatch.setenv("SARAVAM_API_KEY", "sk-fake-key")

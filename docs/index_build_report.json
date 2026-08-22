@@ -1,0 +1,75 @@
+{
+  "strategy": "adaptive",
+  "encoder": {
+    "model": "intfloat/multilingual-e5-small",
+    "dim": 384,
+    "precision": "int8"
+  },
+  "dense": [
+    {
+      "lang": "hi",
+      "vectors": 211930,
+      "dim": 384,
+      "hnsw_m": 32,
+      "ef_construction": 200,
+      "ef_search": 64,
+      "build_seconds": 64.1,
+      "index_mb": 365.5,
+      "ann_recall_at_10": 0.992,
+      "ann_probe_queries": 200,
+      "ann_ms_per_query": 12.583,
+      "exact_ms_per_query": 22.159
+    },
+    {
+      "lang": "en",
+      "vectors": 207634,
+      "dim": 384,
+      "hnsw_m": 32,
+      "ef_construction": 200,
+      "ef_search": 64,
+      "build_seconds": 58.4,
+      "index_mb": 358.0,
+      "ann_recall_at_10": 0.992,
+      "ann_probe_queries": 200,
+      "ann_ms_per_query": 9.274,
+      "exact_ms_per_query": 17.93
+    },
+    {
+      "lang": "mr",
+      "vectors": 213104,
+      "dim": 384,
+      "hnsw_m": 32,
+      "ef_construction": 200,
+      "ef_search": 64,
+      "build_seconds": 58.3,
+      "index_mb": 367.5,
+      "ann_recall_at_10": 0.991,
+      "ann_probe_queries": 200,
+      "ann_ms_per_query": 13.662,
+      "exact_ms_per_query": 24.465
+    }
+  ],
+  "sparse": [
+    {
+      "lang": "hi",
+      "docs": 211930,
+      "build_seconds": 24.1,
+      "index_mb": 106.5,
+      "backend": "bm25s"
+    },
+    {
+      "lang": "en",
+      "docs": 207634,
+      "build_seconds": 18.6,
+      "index_mb": 88.0,
+      "backend": "bm25s"
+    },
+    {
+      "lang": "mr",
+      "docs": 213104,
+      "build_seconds": 26.0,
+      "index_mb": 109.3,
+      "backend": "bm25s"
+    }
+  ]
+}

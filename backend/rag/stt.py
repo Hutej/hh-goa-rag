@@ -99,12 +99,30 @@ class SarvamSTTProvider(STTProvider):
 
     def __init__(self, api_key: str | None = None, language: str = DEFAULT_LANGUAGE):
         load_env()
-        self.api_key = api_key or os.environ.get("SARAVAM_API_KEY")
+        # Accept both spellings: SARVAM_API_KEY is correct, SARAVAM_API_KEY is
+        # the historic misspelling this project shipped with.
+        self.api_key = (api_key
+                        or os.environ.get("SARVAM_API_KEY")
+                        or os.environ.get("SARAVAM_API_KEY"))
         if not self.api_key:
-            raise STTError("SARAVAM_API_KEY not set (configure .env or export it)")
+            raise STTError(
+                "SARVAM_API_KEY not set (configure .env or export it)")
         self.language = language
         from sarvamai import SarvamAI
         self.client = SarvamAI(api_subscription_key=self.api_key)
+
+    # Container extension -> Sarvam `input_audio_codec`. Browsers record WebM
+    # (Opus), which the previous implementation labelled "mp3" because it mapped
+    # everything except .wav to mp3 — so every microphone recording was sent
+    # with the wrong codec hint.
+    CODEC_BY_SUFFIX = {
+        ".wav": "wav", ".wave": "wav",
+        ".mp3": "mp3",
+        ".webm": "webm",
+        ".ogg": "ogg", ".oga": "ogg", ".opus": "ogg",
+        ".m4a": "mp4", ".mp4": "mp4", ".aac": "aac",
+        ".flac": "flac",
+    }
 
     def transcribe(self, audio_path: str) -> Transcription:
         p = Path(audio_path)
@@ -112,9 +130,11 @@ class SarvamSTTProvider(STTProvider):
             raise STTError(f"audio file not found: {audio_path}")
         # Send raw bytes (the path-string upload form is rejected server-side
         # with HTTP 400 "Failed to read the file"; bytes with an explicit
-        # input_audio_codec works). Infer codec from extension.
-        codec = "wav" if p.suffix.lower() in (".wav", ".wave") else "mp3"
+        # input_audio_codec works). Infer codec from the container extension.
+        codec = self.CODEC_BY_SUFFIX.get(p.suffix.lower(), "wav")
         data = p.read_bytes()
+        if not data:
+            raise STTError("audio file is empty")
         t0 = time.time()
         try:
             resp = self.client.speech_to_text.transcribe(

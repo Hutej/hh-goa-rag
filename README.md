@@ -1,443 +1,532 @@
-# HH Goa — Voice-Enabled Multilingual RAG
+# Voice-Enabled Multilingual RAG — HH Goa 2026
 
-## Overview
-
-HH Goa is a voice-enabled Retrieval-Augmented Generation (RAG) system for
-Hindi (extensible to other Indic languages). A user speaks or types a question;
-the system transcribes it, retrieves relevant evidence from a Hindi corpus, and
-generates a grounded answer attributed to retrieved sources.
-
-The end-to-end pipeline:
+Ask a question out loud in **Hindi, Marathi or English**. The system transcribes
+it, retrieves grounded evidence from a 632,668-chunk index built from
+[`ai4bharat/MSMARCO-XI`](https://huggingface.co/datasets/ai4bharat/MSMARCO-XI),
+and answers — in the language you asked, or refuses when the corpus cannot
+support an answer.
 
 ```
-Voice query → Sarvam STT → transcribed query
-  → engineered chunking → BGE-M3 embeddings
-  → dense retrieval (Qdrant cosine) + BM25 lexical retrieval
-  → RRF hybrid fusion
-  → grounded LLM answer + source chunk IDs
+voice ─▶ Sarvam STT ─▶ [input guard] ─▶ hybrid retrieval ─▶ [retrieval guard]
+                                              │
+                                              ├─▶ extractive answer   22 ms
+                                              │
+                                              └─▶ LLM ─▶ [self-report guard]
+                                                          ─▶ [grounding guard]
 ```
 
-The experimental corpus is a **deterministic 20,000-query Hindi subset** of
-[ai4bharat/MSMARCO-XI](https://huggingface.co/datasets/ai4bharat/MSMARCO-XI),
-yielding approximately **200K passage/chunk documents** across three chunking
-strategies. This is a subset of MSMARCO-XI, **not** the full dataset. The raw
-dataset, embeddings, Qdrant indexes and BM25 pickles are intentionally excluded
-from Git (see [Repository Structure](#repository-structure)).
+Everything below is measured on this repository, not estimated. Every number is
+reproducible with the commands given, and the raw outputs are committed under
+`results/`.
 
-## Key Features
+---
 
-- Hindi voice input via Sarvam speech-to-text
-- Speech-to-text using Sarvam (`saaras:v4`)
-- Fixed, semantic and adaptive chunking strategies
-- BGE-M3 multilingual embeddings (1024-dim)
-- Dense vector retrieval (Qdrant, cosine)
-- BM25 lexical retrieval (`rank_bm25`)
-- RRF hybrid fusion of dense + BM25
-- Grounded answer generation (OpenAI-compatible LLM, answers only from context)
-- Source attribution (every answer carries retrieved `chunk_id`s)
-- Retrieval evaluation (Recall@1/5/10, deterministic stratified queries)
-- P50/P70/P100 latency benchmarking (judge methodology)
-- Guardrails: empty/insufficient context → refusal (no hallucination); API
-  failure → controlled error; source traceability
+## Headline results
+
+| Metric | Value |
+|---|---|
+| **Retrieval core** (encode + dense + sparse + fuse) | **22.05 ms** P50 / 71.73 ms P100 |
+| **First grounded answer** (adds guardrails + extractive) | **22.57 ms** P50 / 72.09 ms P100 |
+| Full LLM-generated answer | 949.97 ms P50 |
+| Corpus | 632,668 chunks / 599,652 passages / 3 languages |
+| Retrieval quality | R@10 — English 0.887, Hindi 0.627, Marathi 0.487 |
+| Cross-lingual retrieval | en→hi R@10 0.547, hi→en 0.447 |
+| ANN approximation loss | 0.8% (recall@10 0.992 vs exact search) |
+| Latency improvement over the first implementation | **929 ms → 22 ms P50 (42x)** |
+| Tests | 182 passing |
+
+The organizers' own benchmark script runs against this repo unmodified:
+
+```
+$ python -m benchmarks.benchmark 60
+stage            avg     p50     p95     p99   (ms)
+embed           4.70    4.45    5.95   10.20
+search         10.10    7.50   15.96   41.42
+total          14.88   12.13   20.72   50.05
+
+Latency budget: 200ms | p95 total: 20.72ms
+PASS: within budget
+```
+
+---
+
+## On the 200 ms target: what is being claimed
+
+Full voice-to-generated-answer under 200 ms is not achievable with any hosted
+STT and any hosted LLM. Network round trip alone exceeds it. Rather than pick a
+flattering boundary and stay quiet about it, the pipeline is measured in three
+tiers with the boundary stated:
+
+| Tier | Contains | P50 | P70 | P100 |
+|---|---|---:|---:|---:|
+| **A** retrieval core | encode, dense, sparse, fusion, hydration | 22.05 | 25.18 | 71.73 |
+| **B** first grounded answer | Tier A + 2 guardrail layers + extractive answer | **22.57** | **25.65** | **72.09** |
+| **C** full generated answer | Tier B + LLM round trip | 949.97 | 999.83 | 1125.23 |
+
+*150 queries (50/language), seed 12345, embedding cache disabled, `results/benchmark/latency.json`.*
+
+**Tier B is the claim.** At 22.57 ms the user has a grounded answer on screen —
+verbatim text from retrieved evidence, so hallucination is impossible by
+construction. It clears 200 ms at P100, not just P50.
+
+**Tier C is reported honestly.** Speech-to-text is excluded from all tiers per
+the organizers' clarification that STT latency is not counted; its measured cost
+(485.9 ms P50) is reported separately so the full voice path can be
+reconstructed. Tier C is dominated by the hosted LLM, measured from India — a
+deployment colocated with the provider region will be materially lower.
+
+Per language, Tier B P50: **English 13.08 ms · Marathi 23.87 ms · Hindi 25.65 ms.**
+
+---
 
 ## Architecture
 
-```mermaid
-flowchart TD
-    A[Voice input] --> B[Sarvam STT]
-    T[Text input] --> Q[Query]
-    B --> Q
-    Q --> R[Retrieval]
-    subgraph Indexing
-      D[Raw passages] --> C{Chunking}
-      C -->|fixed| CF[Fixed chunks]
-      C -->|semantic| CS[Semantic chunks]
-      C -->|adaptive| CA[Adaptive chunks]
-      CF --> E[BGE-M3 embeddings]
-      CS --> E
-      CA --> E
-      E --> V[Qdrant + BM25 indexes]
-    end
-    V --> R
-    R --> DR[Dense cosine]
-    R --> BR[BM25]
-    DR --> F[RRF fusion]
-    BR --> F
-    F --> G[Grounded LLM]
-    G --> O[Answer + Sources]
-```
+| Stage | Choice | Why |
+|---|---|---|
+| STT | Sarvam `saaras:v4` | Indic-specialised, handles code-mixing; latency not counted so accuracy governs |
+| Encoder | `multilingual-e5-small`, **int8 ONNX**, 384-dim | 3.96 ms/query on CPU. No torch anywhere |
+| Dense | FAISS `IndexHNSWFlat`, M=32, efSearch=64 | 0.32 ms raw search; 99.2% recall vs exact |
+| Sparse | `bm25s`, one index per language | Replaced `rank_bm25`, the measured #1 bottleneck |
+| Fusion | Weighted RRF, k=60 | Rank-based, so incomparable score scales never mix |
+| Generation | Gemini 3.5 Flash-Lite (provider-agnostic) | Chosen by measurement, see below |
+| Serving | FastAPI, single worker, sync handlers | Indexes are ~1.4 GB resident and held in-process |
 
-Text input skips STT and enters at `Query`.
+### No torch, anywhere
 
-## Dataset
+The encoder is a pre-exported int8 ONNX graph
+(`Xenova/multilingual-e5-small`, 113 MB) run by `onnxruntime`, used for **both**
+corpus and query embedding. The tokenizer loads from `tokenizer.json` via
+`tokenizers`. Consequences:
 
-- **Dataset:** `ai4bharat/MSMARCO-XI` (Hugging Face)
-- **Experimental subset:** a deterministic 20,000-query Hindi slice producing ~204K chunk rows per chunking strategy
-- **Passages:** original document passages from the dataset
-- **Chunks:** passages split by a chunking strategy (fixed/semantic/adaptive); a passage may produce one or more chunks
-- **Queries:** the 20,000 sampled query rows; ~12,354 have ≥1 human-selected relevant passage (`is_selected == 1`), which is the relevance ground truth for evaluation. `answer`/`answer_en` are **not** used as relevance labels.
-- The deterministic subset makes evaluation reproducible across strategies/configs. The raw dataset is downloaded by `scripts/download_dataset.py` and is **not** committed.
+- Deployed image is **~500 MB instead of ~4 GB**, with no multi-GB cold start.
+- Query encoding is **3.96 ms** on CPU.
+- Using identical weights for documents and queries means quantization error
+  points the same way on both sides and largely cancels in the dot product,
+  rather than introducing query/document asymmetry.
 
-## Chunking Strategies
+`requirements.txt` is serve-only; indexing and evaluation dependencies live in
+`requirements-build.txt` and are never installed on the deploy target.
 
-Measured chunk counts (real, from `data/processed/chunks/{strategy}.parquet`):
+---
 
-| Strategy | Description | Chunks |
-|---|---|---:|
-| Fixed | Overlapping windows of fixed token size | 204,932 |
-| Semantic | Sentence-aware boundaries, variable size | 203,621 |
-| Adaptive | Sentence-aware with adaptive size by passage length | 204,390 |
+## Chunking
 
-## Retrieval
+Three strategies, all deterministic and all token-counted with the embedding
+model's own tokenizer: **fixed** (256-token windows, 32 overlap, sliced from the
+offset map so each chunk is an exact substring), **semantic** (sentence-aware
+greedy grouping with a Devanagari-aware splitter), and **adaptive** (routes by
+measured length — short passages stay whole, medium get sentence grouping, long
+get overlapping windows).
 
-- **Embeddings:** BAAI/bge-m3, 1024-dimensional, L2-normalized (the single
-  normalization point; downstream code does not re-normalize). Cosine similarity
-  is the dense metric.
-- **Dense store:** Qdrant (local mode for the demo; full index on Kaggle). Dense
-  Recall@k in evaluation is measured by exact cosine bruteforce over the full
-  local `embeddings.npy`, which produces the identical ranking Qdrant returns
-  (unit-norm + cosine == dot product), so no Qdrant rebuild is needed to evaluate.
-- **BM25:** `rank_bm25.BM25Okapi` with a whitespace + punct-strip + lowercase
-  tokenizer (keeps Devanagari words whole; `\w+` regex fragments Hindi).
-- **Hybrid:** Reciprocal Rank Fusion (RRF), `score(d) = Σ weight/(k+rank)`,
-  default `k=60`.
+**The thresholds are calibrated per language, and the measurement proves that is
+necessary.** Because the corpus is parallel, the *same documents* exist in all
+three languages:
 
-After experiments (see [Results](#results)), the recommended serving
-configuration is **adaptive chunking, dense weight 1.0, BM25 weight 0.25** (a
-light BM25 contribution improves Recall@1 and Recall@10 over dense-only;
-equal weights hurt).
+| Language | Median tokens | Chars per token | `short_max` | Routing (short/medium/long) |
+|---|---:|---:|---:|---|
+| Hindi | 86 | 3.29 | 113 | 80.2% / 19.4% / 0.4% |
+| English | 71 | 4.07 | 92 | 80.1% / 19.8% / 0.0% |
+| Marathi | 84 | 3.29 | 112 | 80.3% / 19.2% / 0.5% |
 
-## Evaluation
+Hindi needs **1.21x the tokens of English for identical content** — the
+sentencepiece vocabulary fragments Devanagari more aggressively. A single shared
+threshold set would route the same document into different bands depending on
+language. Calibrating per language produces near-identical routing behaviour
+across all three, which is the point.
 
-100 deterministic stratified queries (seed 12345), relevance = `is_selected==1`.
-Dense is exact cosine (== Qdrant ranking).
+Reproduce: `python scripts/measure_lengths.py` → `docs/chunking_length_stats.json`
 
-### Chunking comparison (dense-only)
+---
 
-| Strategy | Recall@1 | Recall@5 | Recall@10 |
+## Retrieval quality
+
+150 queries per language, seed 12345, ground truth = MS MARCO `is_selected`
+matched at `document_id` level.
+
+| Language | Retriever | R@1 | R@3 | R@5 | R@10 |
+|---|---|---:|---:|---:|---:|
+| English | dense | 0.407 | 0.673 | 0.807 | **0.887** |
+| English | sparse | 0.207 | 0.480 | 0.580 | 0.727 |
+| Hindi | dense | 0.200 | 0.387 | 0.513 | **0.627** |
+| Hindi | sparse | 0.147 | 0.307 | 0.407 | 0.473 |
+| Marathi | dense | 0.153 | 0.300 | 0.427 | **0.487** |
+| Marathi | sparse | 0.113 | 0.227 | 0.293 | 0.367 |
+
+English is 26–40 points ahead because the English passages *and* queries are
+original MS MARCO text, while Hindi and Marathi are machine translations of
+both — translation noise on both sides of the retrieval.
+
+### Cross-lingual retrieval
+
+The corpus construction makes this measurable for free. Every source row carries
+the same document in English and in the Indic language, index-aligned, sharing
+one `is_selected` label — so `document_id` identifies the same document across
+all three languages and ground truth transfers with **no** label translation.
+
+| Query → Index | R@1 | R@5 | R@10 |
 |---|---:|---:|---:|
-| Fixed | 0.26 | 0.64 | 0.72 |
-| Semantic | 0.26 | 0.64 | 0.72 |
-| Adaptive | 0.26 | 0.64 | 0.72 |
+| en → hi | 0.213 | 0.473 | 0.547 |
+| hi → en | 0.167 | 0.360 | 0.447 |
+| mr → hi | 0.127 | 0.367 | 0.480 |
+| hi → mr | 0.120 | 0.420 | 0.507 |
 
-All three strategies tie on dense recall (the selected passage is found via
-cosine similarity regardless of how it is split). Adaptive is chosen as the
-serving strategy for principled sentence-aware boundaries.
+Ask in Hindi, retrieve an English passage, and the answer still comes back in
+Hindi. All three languages share one embedding space, so this needs no
+translation step.
 
-### Retrieval comparison (adaptive)
+### Hybrid fusion is close to break-even — and that is reported, not hidden
 
-| Retrieval | Recall@1 | Recall@5 | Recall@10 |
+A sweep of the sparse weight over 150 queries × 3 languages:
+
+| `sparse_weight` | mean R@1 | mean R@3 | mean R@5 | mean R@10 |
+|---|---:|---:|---:|---:|
+| 0.0 (dense only) | **0.280** | **0.520** | 0.620 | 0.698 |
+| **0.1 (shipped)** | 0.278 | 0.500 | **0.627** | 0.702 |
+| 0.25 | 0.264 | 0.485 | 0.602 | 0.698 |
+| 1.0 | 0.220 | 0.447 | 0.580 | **0.707** |
+
+The effect is monotonic and mostly *negative*: more sparse weight buys a little
+R@10 while steadily degrading the top of the ranking. Since only 3 chunks reach
+the model, **R@3 is the governing objective** — and dense-only wins it. Shipping
+0.1: indistinguishable from dense-only at R@3, best at R@5, and it retains
+exact-match capability for entity and number queries that a natural-language
+question set under-represents.
+
+Honest summary: on this corpus, word-level BM25 does not earn a large place in
+the top of the ranking. Character n-gram sparse indexing is the obvious next
+step for morphologically rich Devanagari.
+
+Reproduce: `python scripts/evaluate_retrieval.py` and `python scripts/tune_fusion.py`
+
+---
+
+## Scored by the organizers' own harness
+
+[`rag-local-eval-loop`](https://github.com/BeaconBandhu/rag-local-eval-loop) runs
+against this repo with **zero configuration** — no env vars, no HTTP config file
+— because `app/embedder.py` and `app/generator.py` match its default module
+names and exact interface. Drop its `eval/` folder and `run.ps1` in and run.
+
+```
+FAITHFULNESS / HALLUCINATION   (reference-free, LLM-as-judge)
+  Faithful rate           1.000   PERFECT
+  Hallucination rate      0.000   PERFECT
+  Self-report precision   1.000   PERFECT
+
+CORRECTNESS  (reference-based, vs MSMARCO-XI Eng_Answer)
+  Correct rate            1.000   PERFECT
+
+RETRIEVAL  (vs is_selected labels, its own throwaway index)
+  Recall@1 0.560 · Recall@3 0.800 · Recall@5 0.880 · MRR 0.693
+
+LATENCY
+  retrieval p95  7.81 ms  vs 200 ms budget  ->  PASS
+```
+
+**Self-report precision 1.000** is the one worth pointing at: every answer this
+system flagged `grounded=True` was independently confirmed faithful by the
+judge. That is the check for whether a system's own confidence signal can be
+trusted, and it is the metric the suite's README describes catching a real bug in
+its reference target.
+
+### Reliability, reported straight
+
+The "lying factor" is the check most able to catch overselling, so here is the
+full picture rather than the best run. Across repeated 25+25 runs at one worker:
+
+| | measured | suite's own reference target |
+|---|---:|---:|
+| False confidence (fabricated on unanswerable) | 0.400 – 0.480 | 0.667 |
+| False refusal (declined an answerable) | 0.280 – 0.360 | 0.267 |
+
+Two things behind those numbers, both verified rather than asserted:
+
+**Roughly 20% of generation calls never reached the model.** Gemini's free tier
+returned HTTP 429 for 10 of 50 calls even at a single worker. A failed call
+returns `grounded=False`, which the harness correctly scores as a refusal — so
+false refusal here is inflated by quota, not by judgement. Separating them with a
+per-decision reason log gives the underlying behaviour:
+
+| | answered | wrongly declined | 429 |
 |---|---:|---:|---:|
-| Dense | 0.26 | 0.64 | 0.72 |
-| BM25 | 0.09 | 0.27 | 0.33 |
-| Best Hybrid (d=1.0, b=0.25) | 0.27 | 0.61 | 0.74 |
+| answerable (25) | 16 | **4** | 5 |
+| unanswerable (25) | 10 | 10 | 5 |
 
-BM25 alone is weak on Hindi (lexical exact-match over morphologically rich text).
-Hybrid with a **light** BM25 weight beats dense-only at Recall@1 and Recall@10.
-Equal-weight hybrid (d=1.0, b=1.0) is worse than dense-only at small k.
+So genuine over-refusal is 4 of the 20 answerable queries that completed. Honouring
+the provider's own `retryDelay` instead of guessing a backoff cut failures from
+36% to 12% and moved false refusal from 0.600 to 0.280.
 
-## Benchmark
+**Fabrication on unanswerable rows is the real remaining weakness**, at 10 of 20
+completed. These are MS MARCO rows where no annotator marked any passage
+relevant, but the retrieved passages are often topically adjacent, and the model
+answers from them. Tightening the prompt was tried and is documented below as a
+failed experiment.
 
-20 timed warm queries (warmup 5, untimed; model/index load untimed), real Qdrant
-dense + BM25 + RRF, CPU. Judge methodology: warmup → repeated real queries →
-per-stage percentiles.
+To reproduce, including the reason log:
 
-| Stage | P50 | P70 | P100 |
+```powershell
+$env:HHGOA_DECISION_LOG = "results\decisions.jsonl"
+.\run.ps1 --num-answerable 25 --num-unanswerable 25 --workers 1
+```
+
+Note the suite's judge needs its own credential and its generation checks are
+English-only. `app/config.py` declares `GENERATION_BACKEND = "api"` so the suite
+does not clamp itself to one worker, and `LATENCY_BUDGET_MS = 200` per the task
+brief — retrieval clears the suite's stricter 50 ms default too.
+
+### A failed experiment, left in the record
+
+Seeing false confidence at 0.333 on a first small run, I rewrote the system
+prompt to demand the context *specifically* answer the question. Result:
+
+| Prompt | False refusal | False confidence |
+|---|---:|---:|
+| original | 0.000 (n=3) | 0.333 (n=3) |
+| tightened | **0.840** | 0.120 |
+| rebalanced (shipped) | 0.280 – 0.360 | 0.400 – 0.480 |
+
+Declining 84% of answerable questions is far worse than the problem it fixed. Two
+mistakes produced it: comparing a 3-query run at one worker against a 25-query run
+at three workers, so rate-limit failures masqueraded as a prompt effect; and
+optimising one side of a two-sided metric. Both rates are now always measured
+together, at fixed sample size and worker count.
+
+## Guardrails: four layers, and two measured negative results
+
+| Layer | Checks | Blocks on |
+|---|---|---|
+| **Input** | length, script, unsafe content, prompt injection | before any compute is spent |
+| **Retrieval** | empty results, degenerate scores; advisory confidence | genuinely degenerate retrieval only |
+| **Generation** | the model's structured `sufficient` flag and `confidence` | model says the passages don't answer it |
+| **Answer** | groundedness, citation validity, answer language | unsupported answer or fabricated citation |
+
+Verified behaviour: injection blocked in English *and* Hindi, unsafe content
+blocked in both, unsupported scripts declined, a fabricated answer scored 0.300
+groundedness against 0.778 for a supported one, and a hallucinated `chunk_id`
+rejected.
+
+### The similarity threshold that does not work
+
+The obvious guardrail is a cosine floor: refuse when nothing retrieved is similar
+enough. It was built, measured against 80 in-corpus and 13 off-topic queries, and
+**it does not separate the classes**:
+
+```
+in-corpus best cosine   min 0.848   P50 0.915
+off-topic best cosine   min 0.838   P50 0.866   max 0.896
+```
+
+Two real causes: E5 vectors occupy a narrow cone (anisotropy), so absolute cosine
+carries little information; and MS MARCO is web-scale, so "capital of France"
+genuinely retrieves French geography. Rank-shape signals were then scored by
+Youden's J:
+
+| Signal | J | Keeps in-corpus | Admits off-topic |
 |---|---:|---:|---:|
-| Embedding (query encode) | 219.81 | 265.07 | 543.88 |
-| Dense | 278.80 | 300.40 | 553.75 |
-| BM25 | 397.88 | 531.02 | 1240.90 |
-| RRF | 0.11 | 0.11 | 0.20 |
-| Retrieval Total | 928.61 | 1117.47 | 2059.60 |
+| dense score std (top 20) | 0.648 | 72% | 8% |
+| dense gap (top1 − top10) | 0.598 | 68% | 8% |
+| max BM25 score | 0.236 | 31% | 8% |
+| dense/sparse rank overlap | 0.188 | 65% | 46% |
 
-Latencies in milliseconds. **Current measured latency does not meet the target.**
-The official Task 2 target is a full-pipeline (voice → STT → retrieval → answer)
-`<200 ms` measured as P50/P70/P100; this table is **retrieval-stage only** and
-excludes STT and LLM generation, so no `<200 ms` claim is made. The main
-bottleneck is BM25 (P50 ~398 ms, P100 ~1241 ms over the full 204k index).
+The best still costs ~28% false refusals. So the design follows the evidence:
+the retrieval layer blocks only degenerate results, the shape signals are surfaced
+as **advisory confidence** (high/medium/low), and the real refusal weight moves to
+the model's grounded self-assessment — it has seen the actual passages and judges
+"these do not answer this" far better than any threshold — plus post-hoc
+groundedness verification of what it wrote.
 
-## Voice Pipeline
+### The model's own confidence score does not work either
 
-```
-Voice → Sarvam STT (saaras:v4, hi-IN) → query → retrieval → grounded answer
-```
-
-Real measured Sarvam STT latency: **496.2 ms** for the Hindi query
-"मैनहट्टन परियोजना क्या थी?" (exact transcription verified). STT is a replaceable
-provider (`backend/rag/stt.py`); ElevenLabs could be added later.
-
-## Example
-
-A real query through the pipeline (text path, Phase 7):
-
-**Query:** `मैनहट्टन परियोजना क्या थी?`
-
-**Retrieved sources:** `hi_1185869_p3_c0`, `hi_1185869_p7_c0`, `hi_1185869_p0_c0`,
-`hi_1185869_p2_c0`, `hi_1185869_p8_c0` (all `query_id` 1185869 Manhattan Project
-passages, RRF score ~0.032).
-
-**Answer (Hindi, grounded):** मैनहट्टन परियोजना द्वितीय विश्व युद्ध के दौरान
-(1942-1946) संयुक्त राज्य अमेरिका के नेतृत्व में (यूनाइटेड किंगडम और कनाडा के समर्थन से)
-एक अनुसंधान और विकास उपक्रम था, जिसका उद्देश्य पहले परमाणु बम का निर्माण करना था। इस
-परियोजना का नेतृत्व यू.एस. आर्मी कोर ऑफ इंजीनियर्स के मेजर जनरल लेस्ली ग्रोव्स के तहत
-किया गया था, और परमाणु भौतिक विज्ञानी रॉबर्ट ओपेनहाइमर ने लॉस अलामोस प्रयोगशाला के
-निदेशक के रूप में बमों को डिज़ाइन किया था।
-
-Every fact (1942–1946, US+UK+Canada, Groves, Oppenheimer/Los Alamos) traces to
-the retrieved sources. Measured (cold, CPU): retrieval ~21.8 s, generation
-~14.6 s — cold-start dominated by BGE-M3 load and the LLM round-trip; not
-steady-state.
-
-## Repository Structure
+The next obvious knob is the `confidence` the model returns alongside its answer.
+Measured over 50 MS MARCO rows split evenly answerable/unanswerable, it carries
+no usable signal — on every case it chose to answer, it reported the same narrow
+high band regardless of whether the question was answerable:
 
 ```
-hh-goa-rag/
-├── backend/
-│   ├── app.py           # FastAPI app (health, transcribe, query, static SPA)
-│   └── rag/             # embeddings, chunkers, qdrant_index, bm25, hybrid,
-│                        # evaluation, generation, stt, pipeline, bootstrap
-├── scripts/             # download_dataset, chunk/embed/index CLIs,
-│                        # retrieve_dense/bm25/hybrid, answer_query, transcribe,
-│                        # evaluate_retrieval, benchmark, exp1/exp2,
-│                        # push_serve_data (deployment data upload)
-├── tests/               # pytest suite (offline, mock-based)
-├── docs/                # phase docs + RUNBOOK
-├── benchmarks/          # supplied judge benchmark reference
-├── frontend/static/     # static SPA (served by FastAPI, no build step)
-├── results/             # committed small experiment summaries (JSON + MD)
-│   ├── evaluation/      # chunking_comparison, rrf_weights
-│   ├── benchmark/       # retrieval_raw, retrieval_summary, retrieval_report
-│   └── demo/            # e2e_text_query (real app output)
-├── app.py               # HF Spaces entrypoint (re-exports backend.app:app)
-├── Dockerfile           # HF Spaces (Docker) — runs the same app on :7860
-├── data/                # IGNORED: raw/processed dataset, embeddings, qdrant, bm25
-├── requirements.txt
-└── README.md
+answerable,   answered (n=16):  0.9 - 1.0
+unanswerable, answered (n=10):  0.9 - 1.0
 ```
 
-The following are **not** committed (`.gitignore`): raw dataset, processed
-chunks, embeddings, Qdrant database, BM25 pickle, model weights, `.env`.
+Sweeping the threshold is consequently flat: false refusal plus false confidence
+sums to 0.760 at every value from 0.25 to 0.90, then *worsens* to 0.840 at 0.95
+where the only cases it begins rejecting are correct answers. The floor stays low
+to catch a degenerate `confidence: 0`; it is not a tuning knob, and presenting it
+as one would be false precision.
 
-## Installation
+Both calibration attempts landed the same way — the plausible scalar signal
+(retrieval cosine, then model confidence) proved uninformative, and what actually
+works is the model's binary `sufficient` judgement plus lexical verification of
+its answer against the evidence.
+
+---
+
+## The harness
+
+`backend/rag/pipeline.py` is staged, not a single call. Each stage is timed,
+individually failable, and wrapped in a guardrail decision. Every response
+carries a `trace_id`, per-stage timings, and the full guardrail audit trail with
+the signals each layer measured, so a refusal can always be explained.
+
+**Degradation is layered, not binary:**
+
+- LLM errors or times out → serve the extractive answer, mark `degraded`. An
+  outage never becomes a failed request.
+- LLM answer fails the grounding check → serve the extractive answer, because
+  verbatim retrieved text is strictly better than both a hallucination and a
+  refusal.
+- Only genuine "the corpus cannot answer this" refuses outright.
+
+The extractive answer costs **0.24 ms** and does three jobs: the sub-millisecond
+grounded answer, the circuit-breaker fallback, and a reference for judging
+whether generation drifted from the evidence.
+
+Also in the harness: structured JSON output validated against a schema with a
+retry on malformed output, per-stage timeouts, capped `max_tokens`, and
+rate-limit-aware jittered backoff. That last one came from measurement — ~25% of
+rapid sequential requests to Gemini's free tier return HTTP 429; the retry policy
+took observed failures from **5/20 to 0/15**.
+
+---
+
+## LLM provider: chosen by measurement
+
+`generation.py`/`llm.py` speak the OpenAI-compatible protocol, so the provider is
+configuration, not code. Published TTFT figures were not usable — they are
+typically measured at ~10K-token inputs (this pipeline sends ~1.5K) and often
+include reasoning time. So all three were measured directly:
+
+| Provider | Model | TTFT P50 | Hindi total | Script match | Groundedness |
+|---|---|---:|---:|---:|---:|
+| **Gemini** | gemini-3.5-flash-lite | 743 ms | **774 ms** | **3/3** | **0.90–1.0** |
+| OpenAI | gpt-4.1-mini | 661 ms | 2133 ms | 3/3 | 0.77–0.96 |
+| Groq | openai/gpt-oss-20b | **572 ms** | 557 ms | **1/3** | 0.0 (hi/mr) |
+
+Gemini ships: it completes a Hindi answer ~3x faster than OpenAI with equal script
+fidelity and the best grounding. Groq is fastest to first token but **cannot answer
+in Devanagari at all**, which disqualifies it for an Indic deployment regardless of
+speed. The others stay wired up as documented failover.
+
+Worth noting for anyone reproducing this: the obvious model names from
+documentation are already stale. Groq no longer serves any Llama chat model, and
+`gemini-2.5-flash-lite` is retired for new users. Verify against each provider's
+`/models` endpoint.
+
+Reproduce: `python scripts/compare_providers.py`
+
+---
+
+## Reproducing from scratch
 
 ```bash
-git clone <repo>
-cd hh-goa-rag
 python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+venv\Scripts\python -m pip install -r requirements-build.txt   # Windows
+# source venv/bin/activate && pip install -r requirements-build.txt
+
+cp .env.example .env        # add SARVAM_API_KEY and LLM_API_KEY
+
+python scripts/download_encoder.py                      # 130 MB, int8 ONNX
+python scripts/download_dataset.py --languages hin,mar  # 880 MB, validation split
+python scripts/extract_subset.py --languages hi,en,mr --rows 20000
+python scripts/measure_lengths.py                       # calibrate thresholds
+python scripts/chunk_corpus.py --strategies adaptive
+python scripts/embed_corpus.py --languages hi,en,mr     # ~2 h CPU, resumable
+python scripts/build_indexes.py --verify-recall 200
+
+python -m uvicorn backend.app:app --port 7860
 ```
 
-Use `venv/bin/python` for all Python commands.
+**The validation split, not train.** Validation shards are ~440 MB against
+~3.7 GB for train — 8x smaller — and still contain the full MS MARCO dev query
+set (97,941 queries), far more than this corpus needs.
 
-## Environment Variables
+**English costs no extra download.** Every shard carries
+`passages.English_passages` alongside `passages.Translated_passages`, so the
+Hindi shard yields two serving languages *and* the aligned parallel corpus the
+cross-lingual evaluation depends on.
 
-The project reads secrets only from environment variables / a project-root
-`.env` (never hardcoded). `.env` is git-ignored and must never be committed.
+### Verification
 
-| Variable | Purpose |
+```bash
+python -m pytest tests/ -q              # 182 passing
+python -m benchmarks.benchmark 60       # organizers' script, unmodified
+python scripts/benchmark.py             # three-tier P50/P70/P100
+python scripts/evaluate_retrieval.py    # recall + cross-lingual
+```
+
+---
+
+## API
+
+| Endpoint | Purpose |
 |---|---|
-| `SARAVAM_API_KEY` | Sarvam STT (note the spelling) |
-| `LLM_PROVIDER` | LLM provider: `openai` (default) or `echo` (test mock) |
-| `LLM_MODEL` | Model id (defaults to `ANTHROPIC_DEFAULT_SONNET_MODEL` if set, else `gpt-4o-mini`) |
-| `LLM_BASE_URL` | OpenAI-compatible base URL (defaults to `ANTHROPIC_BASE_URL` if set) |
-| `LLM_API_KEY` | LLM API key (defaults to `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` if set) |
-| `STT_PROVIDER` | `sarvam` (default) or `echo` |
-| `STT_LANGUAGE` | language code, default `hi-IN` |
+| `GET /api/health` | state, full serving config, guardrail config, live index stats |
+| `POST /api/query` | text and/or audio → answer, sources, timings, guardrail trail |
+| `POST /api/query/stream` | SSE: `retrieval` → `extractive` → `token`* → `done` |
+| `POST /api/transcribe` | audio → transcript |
 
-## Running
+`POST /api/query` with `use_llm=false` returns the extractive answer only —
+**12.6 ms** end to end through HTTP, useful for demonstrating the retrieval core
+without a provider round trip.
 
-```bash
-# tests
-venv/bin/python -m pytest tests/ -v
+The streaming endpoint emits events in the order they become available, so the
+grounded extractive answer arrives roughly 30x sooner than the first generated
+token.
 
-# retrieval evaluation (Recall@1/5/10)
-venv/bin/python scripts/evaluate_retrieval.py --n-queries 100
+---
 
-# latency benchmark (P50/P70/P100)
-venv/bin/python scripts/benchmark.py --n-queries 50
+## What I would do next
 
-# text query → grounded answer
-venv/bin/python scripts/answer_query.py --query "मैनहट्टन परियोजना क्या थी?" --device cpu
+- **Character n-gram sparse index.** Word-level BM25 is weak on
+  machine-translated Devanagari (Marathi R@10 0.367). Char 3–5 grams typically
+  beat it substantially on morphologically rich script, at ~2 ms with the same
+  `bm25s` machinery.
+- **Reduce sparse latency.** At 14.4 ms it is now 65% of Tier A, having started
+  as the single worst stage at 398 ms.
+- **Trained multilingual moderation** in place of the pattern-based unsafe-content
+  filter, which is demo-grade and easy to defeat (stated plainly in
+  `guardrails.py`).
+- **Colocate with the LLM region** to cut Tier C, which is currently dominated by
+  an India→US round trip.
 
-# voice query (audio → text → retrieval → answer)
-venv/bin/python scripts/transcribe.py --audio query.wav
-venv/bin/python scripts/answer_query.py --query "$(venv/bin/python -c "import json;print(json.load(open('t.json'))['text'])")"
+## Known limitations
 
-# web app (FastAPI backend + static frontend) — the judge-facing demo
-venv/bin/python -m uvicorn backend.app:app --host 0.0.0.0 --port 7860
-# then open http://localhost:7860
+- Retrieval quality on Hindi and Marathi is bounded by machine-translation noise
+  in the dataset itself; English R@10 is 0.887 against Hindi 0.627 on identical
+  documents.
+- The unsafe-content filter is pattern-based, not a trained classifier.
+- Streaming gives up the structured `sufficient` flag, so the generation-layer
+  guardrail cannot run on the streamed path. Input and retrieval guards still
+  apply, and groundedness is verified on the completed text.
+- No authentication or rate limiting on the API. It is a public read-only demo
+  over a fixed corpus, storing no user data — but it should not be deployed as-is
+  in front of a paid LLM key without a rate limit.
+- Single worker by design: the indexes are ~1.4 GB resident, so extra workers
+  would multiply memory rather than throughput.
 
-# experiments
-venv/bin/python scripts/exp1_chunking.py --n-queries 100
-venv/bin/python scripts/exp2_rrf_weights.py --strategy adaptive --n-queries 100
+---
+
+## Layout
+
+```
+backend/rag/
+  config.py       env-driven config, language registry
+  encoder.py      int8 ONNX encoder, query cache
+  dense.py        FAISS HNSW per language
+  sparse.py       bm25s per language
+  retrieval.py    RRF fusion, script routing, diversity cap
+  extractive.py   verbatim grounded answer (0.24 ms)
+  guardrails.py   four layers + measured evidence for the design
+  llm.py          pooled/streaming/structured provider client
+  pipeline.py     the harness
+  stt.py          Sarvam
+backend/app.py    FastAPI
+app/              compatibility shim for the organizers' benchmark
+scripts/          data pipeline, indexing, evaluation, benchmarks
+results/          committed measurement outputs
 ```
 
-## Web Application
+Datasets and models used: [`ai4bharat/MSMARCO-XI`](https://huggingface.co/datasets/ai4bharat/MSMARCO-XI),
+[`intfloat/multilingual-e5-small`](https://huggingface.co/intfloat/multilingual-e5-small)
+via the [`Xenova`](https://huggingface.co/Xenova/multilingual-e5-small) ONNX export.
 
-A FastAPI backend (`backend/app.py`) serves a polished static frontend
-(`frontend/static/index.html`) — no build step, no Node/npm. The backend
-orchestrates the existing phases via `backend/rag/pipeline.py` and caches heavy
-components (BGE-M3, BM25, LLM provider) in-process so warm requests reuse them
-(the first request may be slow while models load).
-
-### API endpoints
-
-| Method | Path | Body | Returns |
-|---|---|---|---|
-| GET | `/api/health` | — | `{status, ready, stt_available, guardrail_min_relevance, serving_config}` |
-| POST | `/api/query` | multipart: `text` (optional), `audio` file (optional), `top_k` | `{answer, query, language, sources[], timing, guardrail_triggered}` |
-| POST | `/api/transcribe` | multipart: `audio` file | `{text, language, provider, latency_ms}` |
-
-`/api/query` uses text if provided (skips STT); otherwise transcribes the audio.
-The frontend POSTs to `/api/query` with either a recorded `audio` blob or a text
-field. `timing` exposes every stage: `stt_ms`, `encode_ms`, `dense_ms`,
-`bm25_ms`, `rrf_ms`, `generation_ms`, `total_ms` — measured live, not fabricated.
-
-### Guardrail
-
-A simple deterministic guardrail in `backend/rag/pipeline.py`: if no retrieved
-hybrid candidate has `rrf_score >= RAG_MIN_RELEVANCE` (default `0.005`, env
-configurable), the system does **not** generate an answer and returns
-_"I couldn't find enough relevant information in the knowledge base to answer
-this question."_ The threshold is a real retrieval signal (RRF score), not a
-per-query heuristic. For valid queries, generation uses retrieved context only.
-
-
-## Results
-
-Committed, git-friendly experiment summaries:
-
-- `results/evaluation/chunking_comparison.json` / `.md` — Experiment 1
-- `results/evaluation/rrf_weights.json` / `.md` — Experiment 2
-- `results/benchmark/retrieval_raw.json`, `retrieval_summary.json`,
-  `retrieval_report.md` — Experiment 3
-
-Large artifacts (embeddings, Qdrant, BM25 pickle, model weights, raw dataset,
-`.env`, API keys) are **not** committed.
-
-## Limitations
-
-- **Deterministic 20K-query experimental subset** of MSMARCO-XI (not the full dataset).
-- **Current measured latency does not meet the <200 ms target** — retrieval-stage P50 ~929 ms (CPU), with BM25 the bottleneck; STT (~496 ms) and LLM generation are additional and not yet included in an end-to-end benchmark.
-- **Local Qdrant limitation:** the laptop has a partial (32,756-point) adaptive Qdrant index; the full 204,390-point index exists on Kaggle. Dense latency is measured locally; full-index dense latency should be re-measured on Kaggle. Evaluation recall is valid everywhere (bruteforce dense == Qdrant cosine ranking).
-- **7 GB RAM laptop** OOMs when loading BGE-M3 + Qdrant + BM25 + embeddings concurrently on the GPU path; the CPU path and Kaggle (GPU + more RAM) avoid this.
-- LLM and STT are external API calls; their latency dominates end-to-end time and depends on the provider.
-
-## Demo
-
-A real end-to-end query through the FastAPI backend (CPU, cold start) is saved as
-git-friendly evidence in [`results/demo/e2e_text_query.json`](results/demo/e2e_text_query.json).
-
-**Input:** `मैनहट्टन परियोजना क्या थी?` (text path, `top_k=5`)
-
-**Output (excerpt):**
-
-| Field | Value |
-|---|---|
-| Answer | मैनहट्टन परियोजना द्वितीय विश्व युद्ध के दौरान (1942-1946) संयुक्त राज्य अमेरिका के नेतृत्व में … रॉबर्ट ओपनहाइमर ने लॉस अलामोस प्रयोगशाला का निदेशकत्व किया। |
-| Sources | `hi_1185869_p3_c0` … `hi_1185869_p0_c0` (RRF ≈ 0.032, all `query_id` 1185869) |
-| Guardrail | not triggered (best RRF 0.032 ≥ 0.005) |
-
-**Measured latency (cold start, CPU):**
-
-| Stage | ms |
-|---|---:|
-| Encode | 184.5 |
-| Dense | 299.2 |
-| BM25 | 2340.2 (cold index load) |
-| RRF | 1.4 |
-| Generation | 9995.4 (LLM API round-trip) |
-| **Total** | **50797.1** |
-
-This is a **cold** run: BM25 is inflated by first index load and generation is an external
-LLM API call. Warm steady-state retrieval is ~929 ms (see [Benchmark](#benchmark)). Every
-answer fact (1942–1946, US+UK+Canada, Groves, Oppenheimer/Los Alamos) traces to the retrieved
-sources — no fabrication.
-
-To reproduce:
-
-```bash
-venv/bin/python -m uvicorn backend.app:app --host 0.0.0.0 --port 7860
-# open http://localhost:7860  → type the query and press Ask
-```
-
-- GitHub repository: https://github.com/Hutej/hh-goa-rag
-- Live demo: Hugging Face Space — see [Deployment](#deployment)
-
-## Deployment
-
-The app runs **identically locally and deployed** — same FastAPI code, same
-`PROJECT_ROOT/data/processed/...` paths, same `backend.app:app` on port 7860.
-Deployment target: **Hugging Face Spaces (Docker)**.
-
-### What the app needs at serve time
-
-The 2.4 G `embeddings.npy` is used only for *indexing*, not retrieval. At serve
-time the app needs only the Qdrant index, the BM25 index, and the chunk text:
-
-| Artifact | Size | Purpose |
-|---|---:|---|
-| `data/processed/qdrant/` | ~373 M | dense retrieval (cosine) |
-| `data/processed/bm25/adaptive/bm25.pkl` | ~151 M | lexical retrieval |
-| `data/processed/bm25/adaptive/metadata.parquet` | ~57 M | BM25 row metadata |
-| `data/processed/chunks/adaptive.parquet` | ~62 M | BM25 rebuild fallback |
-| **serve total** | **~643 M** | |
-
-These are gitignored (too large for the code repo). BGE-M3 (~2.2 G) is **not**
-bundled — it downloads from the HF Hub at startup and is cached on the Space's
-persistent volume.
-
-### Local
-
-```bash
-venv/bin/python -m uvicorn backend.app:app --host 0.0.0.0 --port 7860
-# open http://localhost:7860
-```
-
-### Hugging Face Space (one-time setup, then it just runs)
-
-The code repo (this repository) holds the app; the serve data lives in a
-separate HF **dataset repo** that the Space downloads once at startup
-(`backend/rag/bootstrap.py`). This keeps the code repo small and makes the data
-reproducible.
-
-**1. Push the serve data to a dataset repo (run once, from a machine that has it):**
-
-```bash
-export HF_TOKEN=<your write token>
-venv/bin/python scripts/push_serve_data.py --repo <user>/hh-goa-rag-data
-```
-
-This uploads only the ~643 M serve set (Qdrant + BM25 + chunks), not the 2.4 G
-embeddings.
-
-**2. Create the Space** (Docker SDK type), push this repo to it, and set these
-**Space secrets** (Settings → Repository secrets):
-
-| Secret | Value |
-|---|---|
-| `SARAVAM_API_KEY` | Sarvam STT key |
-| `OPENAI_API_KEY` | LLM key (OpenAI-compatible) |
-| `LLM_BASE_URL` | LLM endpoint (if non-default) |
-| `LLM_MODEL` | model id (e.g. `gpt-4o-mini`) |
-| `HHGOA_DATA_REPO` | `<user>/hh-goa-rag-data` (from step 1) |
-
-The `Dockerfile` runs `uvicorn backend.app:app --host 0.0.0.0 --port 7860`
-(HF Spaces' required port). On first startup `warmup()` sees the serve data is
-absent, downloads it from `HHGOA_DATA_REPO` into the persistent `/data` volume,
-loads BGE-M3 (cached on the volume), and begins serving. Subsequent restarts
-reuse the cached data and model.
-
-### Deployment notes (stated plainly)
-
-- The Space's first build/start is slow: it pip-installs deps, downloads BGE-M3
-  (~2.2 G) and the serve data (~643 M). With a persistent volume these are cached
-  across restarts.
-- `/api/health` reports `serve_data_present` and `ready` so a judge can confirm
-  the Space has finished bootstrapping before sending a query.
-- The 7 GB-RAM demo laptop OOMs on the **GPU** path; the CPU path (the Space and
-  the verified local run) works. On a GPU box with ≥16 GB RAM the GPU path is
-  faster; the code auto-selects via `load_embedder`.
-- STT and LLM latency depend on the external Sarvam / OpenAI-compatible provider
-  and dominate end-to-end time (see [Demo](#demo)).
+`#RAGInGoa`

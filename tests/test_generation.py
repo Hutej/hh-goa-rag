@@ -75,6 +75,12 @@ class TestGeneration:
         assert "boom" in str(ei.value) or "network" in str(ei.value)
 
     def test_response_structure_via_cli(self, monkeypatch, capsys, tmp_path):
+        # Legacy CLI: scripts/answer_query.py drives the superseded
+        # hybrid.py/bm25.py path, which imports rank_bm25 (now a build-time-only
+        # dependency). The current entry points are backend/app.py and
+        # backend/rag/pipeline.py, covered in tests/test_pipeline.py.
+        pytest.importorskip("rank_bm25",
+                            reason="legacy CLI path; see requirements-build.txt")
         # drive the CLI main() with the echo provider (no network, no Qdrant)
         # by monkeypatching hybrid_search to return canned hybrid hits.
         import scripts.answer_query as aq

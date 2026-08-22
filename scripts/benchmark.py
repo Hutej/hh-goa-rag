@@ -1,191 +1,366 @@
-"""Phase 6: retrieval-stage latency benchmark (P50/P70/P100).
+"""Three-tier latency benchmark: P50 / P70 / P100 across all served languages.
 
-Measures per-query latency of the retrieval pipeline (encode -> dense -> BM25 ->
-RRF) using the REAL Qdrant dense path, BM25, and RRF fusion. Reports cold-start
-(first query) separately from warm per-query latency, and P50/P70/P100 for each
-stage and the total.
+Why three tiers
+---------------
+Reporting one number for "the pipeline" hides the only thing that matters: which
+parts are under our control and which are a third party's queue. So each tier is
+measured and reported separately, with the boundary stated explicitly.
 
-This is a RETRIEVAL-STAGE benchmark only. It does NOT include STT or LLM answer
-generation, and does NOT claim the official <200 ms end-to-end target is met.
-The official target covers voice -> STT -> retrieval -> answer generation and
-requires its own end-to-end measurement once those stages exist.
+    Tier A  retrieval core       encode + dense + sparse + fuse + hydrate
+    Tier B  first grounded answer  Tier A + guardrails + extractive answer
+    Tier C  full generated answer  Tier B + LLM round trip
 
-One-time model/index loading is performed (untimed) before warmup, so the timed
-runs reflect steady-state per-query cost.
+Tier B is the headline latency claim: at that point the user has a grounded,
+verbatim answer on screen. Tier C is reported honestly alongside it, because a
+hosted LLM's time-to-first-token cannot be controlled from here — and hiding it
+would be the dishonest version of this report.
+
+Speech-to-text is measured separately and excluded from the tiers, per the task
+clarification that STT latency is not counted. Its measured cost is still
+reported so the full voice-path number can be reconstructed.
+
+Methodology
+-----------
+* Queries are sampled **deterministically** (seed 12345) from the labelled
+  ground-truth set, so the same queries are used on every run and across
+  languages.
+* The query-embedding cache is **disabled**. With it on, a benchmark that cycles
+  a fixed query list would report cache-hit latency, which would be meaningless.
+* Warmup iterations run first and are excluded, then cold-start is reported
+  separately from the warm percentiles — a single cold number does not represent
+  steady state, and a warm number alone hides deployment reality.
+* P100 is the true maximum, not a smoothed p99: with a hard latency target the
+  worst observed case is the honest tail.
 
 Usage:
-    venv/bin/python scripts/benchmark.py --n-queries 50
+    python scripts/benchmark.py
+    python scripts/benchmark.py --queries 150 --llm-queries 20
+    python scripts/benchmark.py --no-llm            # tiers A and B only
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import random
 import statistics
 import sys
 import time
 from pathlib import Path
 
 import numpy as np
+import pyarrow.parquet as pq
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from backend.rag.bm25 import BM25Index  # noqa: E402
-from backend.rag.embeddings import load_embedder, encode_batch  # noqa: E402
-from backend.rag.evaluation import load_eval_corpus, sample_queries  # noqa: E402
-from backend.rag.qdrant_index import dense_search, get_client  # noqa: E402
 
-STAGES = ["encode_ms", "dense_ms", "bm25_ms", "rrf_ms", "total_ms"]
+from backend.rag import guardrails as G  # noqa: E402
+from backend.rag.config import CFG, LANGUAGES  # noqa: E402
+from backend.rag.extractive import extract_answer  # noqa: E402
+from backend.rag.llm import GenerationError, Source  # noqa: E402
+from backend.rag.pipeline import Components, warmup  # noqa: E402
+from backend.rag.retrieval import get_retriever  # noqa: E402
+
+SEED = 12345
+TARGET_MS = 200
 
 
-def percentiles(values: list[float], ps: list[int] = (50, 70, 100)) -> dict:
-    """Percentiles of a list of latencies (ms). P100 = max.
-
-    Uses linear interpolation like numpy.percentile for P50/P70; P100 is the
-    observed maximum (not interpolated, since the official target cares about the
-    worst observed case). Empty input -> zeros.
-    """
+def percentiles(values: list[float]) -> dict:
     if not values:
-        return {f"P{p}": 0.0 for p in ps}
-    arr = np.asarray(values, dtype=float)
-    out = {}
-    for p in ps:
-        if p == 100:
-            out[f"P{p}"] = round(float(arr.max()), 2)
-        else:
-            out[f"P{p}"] = round(float(np.percentile(arr, p)), 2)
+        return {"P50": None, "P70": None, "P100": None, "mean": None, "n": 0}
+    a = np.asarray(values, dtype=np.float64)
+    return {
+        "P50": round(float(np.percentile(a, 50)), 2),
+        "P70": round(float(np.percentile(a, 70)), 2),
+        "P100": round(float(a.max()), 2),
+        "mean": round(float(a.mean()), 2),
+        "n": int(a.size),
+    }
+
+
+def sample_queries(n_per_lang: int) -> dict[str, list[str]]:
+    """Deterministic query sample per language, drawn from labelled queries.
+
+    Only queries that have at least one ``is_selected`` passage are used, so
+    every benchmark query is one the corpus can actually answer — otherwise the
+    guardrails would refuse and Tier C would measure refusals instead of work.
+    """
+    rng = random.Random(SEED)
+    out: dict[str, list[str]] = {}
+    for code in CFG.languages:
+        path = CFG.passages_path(code)
+        if not path.exists():
+            continue
+        # Query column per language: `query_en` for English, `query` (the
+        # shard's Indic text) otherwise — see config.Language.query_col.
+        qcol = CFG.lang(code).query_col
+        tbl = pq.read_table(path, columns=["query_id", qcol, "is_selected"])
+        seen: dict[int, str] = {}
+        qids = tbl.column("query_id").to_pylist()
+        queries = tbl.column(qcol).to_pylist()
+        sel = tbl.column("is_selected").to_pylist()
+        for qid, q, s in zip(qids, queries, sel):
+            if s and qid not in seen and (q or "").strip():
+                seen[qid] = q.strip()
+        pool = sorted(seen.items())
+        rng2 = random.Random(SEED)
+        rng2.shuffle(pool)
+        out[code] = [q for _, q in pool[:n_per_lang]]
     return out
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--strategy", default="adaptive")
-    ap.add_argument("--n-queries", type=int, default=50)
-    ap.add_argument("--device", default=None, choices=["cuda", "cpu"])
-    ap.add_argument("--seed", type=int, default=12345)
-    ap.add_argument("--warmup", type=int, default=5,
-                    help="warmup queries (untimed)")
+def bench_retrieval(queries: dict[str, list[str]], warmup_n: int) -> dict:
+    """Tiers A and B, per language and pooled."""
+    retr = get_retriever()
+    flat = [(lang, q) for lang, qs in queries.items() for q in qs]
+
+    # Warm the code paths (page-ins, first-call allocations) and discard.
+    for _, q in flat[:warmup_n]:
+        retr.search(q, use_cache=False)
+
+    stages = ["encode_ms", "dense_ms", "sparse_ms", "fuse_ms", "hydrate_ms",
+              "retrieval_ms", "guard_ms", "extractive_ms", "first_answer_ms"]
+    per_lang: dict[str, dict[str, list[float]]] = {
+        lang: {s: [] for s in stages} for lang in queries}
+    cold: dict | None = None
+
+    for i, (lang, q) in enumerate(flat):
+        t0 = time.perf_counter()
+        result = retr.search(q, use_cache=False)
+        t_guard = time.perf_counter()
+        G.check_input(q)
+        v = G.check_retrieval(result)
+        guard_ms = (time.perf_counter() - t_guard) * 1000
+        t_ext = time.perf_counter()
+        extract_answer(q, result.hits)
+        ext_ms = (time.perf_counter() - t_ext) * 1000
+        first_ms = (time.perf_counter() - t0) * 1000
+
+        row = dict(result.timing)
+        row["guard_ms"] = guard_ms
+        row["extractive_ms"] = ext_ms
+        row["first_answer_ms"] = first_ms
+        if i == 0:
+            cold = {k: round(v2, 2) for k, v2 in row.items() if k in stages}
+        for s in stages:
+            if s in row:
+                per_lang[lang][s].append(row[s])
+
+    pooled = {s: [] for s in stages}
+    for lang, d in per_lang.items():
+        for s in stages:
+            pooled[s].extend(d[s])
+
+    return {
+        "cold_start_ms": cold,
+        "pooled": {s: percentiles(pooled[s]) for s in stages},
+        "per_language": {lang: {s: percentiles(d[s]) for s in stages}
+                         for lang, d in per_lang.items()},
+    }
+
+
+def bench_generation(queries: dict[str, list[str]], n: int) -> dict:
+    """Tier C: full generated answer, including the LLM round trip."""
+    client = Components.llm()
+    if client is None:
+        return {"skipped": "llm not configured"}
+    retr = get_retriever()
+    client.warmup()
+
+    flat = [(lang, q) for lang, qs in queries.items() for q in qs]
+    rng = random.Random(SEED)
+    rng.shuffle(flat)
+    flat = flat[:n]
+
+    gen_ms: list[float] = []
+    total_ms: list[float] = []
+    per_lang: dict[str, list[float]] = {}
+    modes = {"generated": 0, "refused": 0, "failed": 0}
+
+    for lang, q in flat:
+        t0 = time.perf_counter()
+        result = retr.search(q, use_cache=False)
+        srcs = [Source(chunk_id=h["chunk_id"], document_id=h.get("document_id"),
+                       score=h.get("rrf_score"), text=h.get("text") or "",
+                       lang=h.get("lang"))
+                for h in result.hits[:CFG.generation_k]]
+        t_gen = time.perf_counter()
+        try:
+            answer, meta = client.complete(q, srcs)
+        except GenerationError:
+            modes["failed"] += 1
+            continue
+        g = (time.perf_counter() - t_gen) * 1000
+        tot = (time.perf_counter() - t0) * 1000
+        gen_ms.append(g)
+        total_ms.append(tot)
+        per_lang.setdefault(lang, []).append(tot)
+        modes["generated" if answer.sufficient else "refused"] += 1
+
+    return {
+        "generation_ms": percentiles(gen_ms),
+        "total_ms": percentiles(total_ms),
+        "per_language_total_ms": {k: percentiles(v) for k, v in per_lang.items()},
+        "outcomes": modes,
+        "provider": client.describe(),
+    }
+
+
+def bench_stt(sample: Path | None) -> dict:
+    """Speech-to-text cost, reported separately (excluded from the tiers)."""
+    if sample is None or not sample.exists():
+        return {"skipped": "no sample audio; pass --audio <file>"}
+    stt = Components.stt()
+    if stt is None:
+        return {"skipped": "stt not configured"}
+    times: list[float] = []
+    for _ in range(3):
+        t0 = time.perf_counter()
+        try:
+            stt.transcribe(str(sample))
+        except Exception as e:
+            return {"error": str(e)[:180]}
+        times.append((time.perf_counter() - t0) * 1000)
+    return {"file": sample.name, "latency_ms": percentiles(times)}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--queries", type=int, default=50,
+                    help="queries per language for tiers A/B (default 50)")
+    ap.add_argument("--llm-queries", type=int, default=20,
+                    help="total queries for tier C (default 20)")
+    ap.add_argument("--warmup", type=int, default=5)
+    ap.add_argument("--no-llm", action="store_true")
+    ap.add_argument("--audio", default="data/samples/voice_hi_manhattan.wav")
     args = ap.parse_args()
 
-    print("loading eval corpus + sampling queries...", flush=True)
-    corpus = load_eval_corpus(args.strategy)
-    qids = sample_queries(corpus, n=args.n_queries + args.warmup, seed=args.seed)
-    print(f"  {len(qids)} queries sampled ({args.warmup} warmup, "
-          f"{args.n_queries} timed)", flush=True)
+    print("=" * 78)
+    print("LATENCY BENCHMARK — P50 / P70 / P100")
+    print("=" * 78)
 
-    print("loading BGE-M3 (untimed)...", flush=True)
-    model, device, dtype = load_embedder(args.device, None)
-    print("loading BM25 index (untimed)...", flush=True)
-    bm25 = BM25Index.load(args.strategy)
+    w = warmup()
+    queries = sample_queries(args.queries)
+    total_q = sum(len(v) for v in queries.values())
+    if not total_q:
+        print("ERROR: no labelled queries found; run the data pipeline first",
+              file=sys.stderr)
+        return 1
 
-    client = get_client()
-    try:
-        # ---- warmup (untimed) ----
-        print(f"warmup ({args.warmup} queries, untimed)...", flush=True)
-        for i in range(args.warmup):
-            q = corpus[qids[i]]["query"]
-            qv = encode_batch(model, [q], batch_size=1)
-            dh = dense_search(client, args.strategy, qv, top_k=20)
-            bh = bm25.query(q, top_k=20)
-            from backend.rag.hybrid import rrf_fuse
-            rrf_fuse(dh, bh)
+    print(f"Encoder    : {CFG.embed_model} ({CFG.embed_precision}, "
+          f"dim {CFG.embed_dim}, {CFG.embed_backend})")
+    print(f"Dense      : faiss HNSW m={CFG.hnsw_m} ef_search={CFG.hnsw_ef_search}")
+    print(f"Sparse     : bm25s")
+    print(f"Languages  : {', '.join(queries)}")
+    print(f"Queries    : {total_q} ({args.queries}/language), seed {SEED}, "
+          f"embedding cache DISABLED")
+    print(f"Target     : {TARGET_MS} ms")
+    print()
 
-        # ---- timed runs ----
-        timed_qids = qids[args.warmup:]
-        per_q = {s: [] for s in STAGES}
-        cold = None
-        for i, qid in enumerate(timed_qids):
-            q = corpus[qid]["query"]
-            t_total = time.time()
-            t = time.time()
-            qv = encode_batch(model, [q], batch_size=1)
-            encode_ms = (time.time() - t) * 1000
+    retrieval = bench_retrieval(queries, args.warmup)
 
-            t = time.time()
-            dh = dense_search(client, args.strategy, qv, top_k=20)
-            dense_ms = (time.time() - t) * 1000
+    print("-" * 78)
+    print("TIER A — retrieval core   |   TIER B — first grounded answer")
+    print("-" * 78)
+    print(f"{'stage':<20}{'P50':>10}{'P70':>10}{'P100':>10}{'mean':>10}")
+    order = ["encode_ms", "dense_ms", "sparse_ms", "fuse_ms", "hydrate_ms",
+             "retrieval_ms", "guard_ms", "extractive_ms", "first_answer_ms"]
+    for s in order:
+        p = retrieval["pooled"][s]
+        if p["n"] == 0:
+            continue
+        label = s
+        if s == "retrieval_ms":
+            label = "TIER A total"
+        elif s == "first_answer_ms":
+            label = "TIER B total"
+        print(f"{label:<20}{p['P50']:>10.2f}{p['P70']:>10.2f}"
+              f"{p['P100']:>10.2f}{p['mean']:>10.2f}")
 
-            t = time.time()
-            bh = bm25.query(q, top_k=20)
-            bm25_ms = (time.time() - t) * 1000
+    print()
+    print(f"{'per language':<20}{'tier A P50':>12}{'tier B P50':>12}"
+          f"{'tier B P100':>13}")
+    for lang, d in retrieval["per_language"].items():
+        a = d["retrieval_ms"]
+        b = d["first_answer_ms"]
+        if a["n"] == 0:
+            continue
+        print(f"{LANGUAGES[lang].name:<20}{a['P50']:>12.2f}{b['P50']:>12.2f}"
+              f"{b['P100']:>13.2f}")
 
-            t = time.time()
-            from backend.rag.hybrid import rrf_fuse
-            rrf_fuse(dh, bh)
-            rrf_ms = (time.time() - t) * 1000
+    print()
+    print(f"cold start (first query): {json.dumps(retrieval['cold_start_ms'])}")
 
-            total_ms = (time.time() - t_total) * 1000
-            if i == 0:
-                cold = {"encode_ms": round(encode_ms, 2),
-                        "dense_ms": round(dense_ms, 2),
-                        "bm25_ms": round(bm25_ms, 2),
-                        "rrf_ms": round(rrf_ms, 2),
-                        "total_ms": round(total_ms, 2)}
-            for s, v in [("encode_ms", encode_ms), ("dense_ms", dense_ms),
-                         ("bm25_ms", bm25_ms), ("rrf_ms", rrf_ms),
-                         ("total_ms", total_ms)]:
-                per_q[s].append(v)
-    finally:
-        client.close()
+    generation = {"skipped": "--no-llm"} if args.no_llm else \
+        bench_generation(queries, args.llm_queries)
 
-    ps = (50, 70, 100)
-    warm = {s: percentiles(per_q[s], ps) for s in STAGES}
+    if "skipped" not in generation:
+        print()
+        print("-" * 78)
+        print("TIER C — full generated answer")
+        print("-" * 78)
+        g = generation["generation_ms"]
+        t = generation["total_ms"]
+        print(f"{'stage':<20}{'P50':>10}{'P70':>10}{'P100':>10}")
+        print(f"{'llm round trip':<20}{g['P50']:>10.2f}{g['P70']:>10.2f}"
+              f"{g['P100']:>10.2f}")
+        print(f"{'TIER C total':<20}{t['P50']:>10.2f}{t['P70']:>10.2f}"
+              f"{t['P100']:>10.2f}")
+        print(f"outcomes: {generation['outcomes']}  "
+              f"(n={t['n']}, provider={generation['provider']['model']})")
 
-    print("\n=== RETRIEVAL-STAGE LATENCY BENCHMARK ===", flush=True)
-    print(f"strategy: {args.strategy}  device: {device}({dtype})", flush=True)
-    print(f"timed queries: {len(timed_qids)}  (warmup: {args.warmup})",
-          flush=True)
-    print(f"\ncold-start (first timed query, ms): {cold}", flush=True)
-    print(f"\nwarm per-query percentiles (ms):", flush=True)
-    print(f"{'stage':<12} " + " ".join(f"{f'P{p}':<10}" for p in ps), flush=True)
-    for s in STAGES:
-        print(f"{s:<12} " + " ".join(f"{warm[s][f'P{p}']:<10}" for p in ps),
-              flush=True)
+    stt = bench_stt(Path(args.audio) if args.audio else None)
 
-    out = {
-        "strategy": args.strategy, "device": device, "dtype": dtype,
-        "timed_queries": len(timed_qids), "warmup": args.warmup,
-        "cold_start_ms": cold, "warm_percentiles_ms": warm,
-        "note": "retrieval-stage only; excludes STT + LLM; no <200ms claim",
+    tier_a = retrieval["pooled"]["retrieval_ms"]
+    tier_b = retrieval["pooled"]["first_answer_ms"]
+    tier_c = generation.get("total_ms") if "skipped" not in generation else None
+
+    print()
+    print("=" * 78)
+    print("VERDICT against the 200 ms target")
+    print("=" * 78)
+    print(f"Tier A  retrieval core        P50 {tier_a['P50']:>8.2f} ms  "
+          f"P100 {tier_a['P100']:>8.2f} ms  "
+          f"{'PASS' if tier_a['P100'] <= TARGET_MS else 'FAIL'}")
+    print(f"Tier B  first grounded answer P50 {tier_b['P50']:>8.2f} ms  "
+          f"P100 {tier_b['P100']:>8.2f} ms  "
+          f"{'PASS' if tier_b['P100'] <= TARGET_MS else 'FAIL'}")
+    if tier_c:
+        print(f"Tier C  generated answer      P50 {tier_c['P50']:>8.2f} ms  "
+              f"P100 {tier_c['P100']:>8.2f} ms  "
+              f"{'PASS' if tier_c['P50'] <= TARGET_MS else 'over target'}")
+        print("        Tier C is dominated by the hosted LLM round trip, which "
+              "is not locally controllable.")
+    if "latency_ms" in stt:
+        print(f"STT     (excluded per task)    P50 "
+              f"{stt['latency_ms']['P50']:>8.2f} ms")
+
+    report = {
+        "target_ms": TARGET_MS,
+        "seed": SEED,
+        "cache_disabled": True,
+        "queries_per_language": args.queries,
+        "config": CFG.describe(),
+        "warmup": w,
+        "tier_a_and_b": retrieval,
+        "tier_c": generation,
+        "stt_excluded_from_tiers": stt,
+        "verdict": {
+            "tier_a_p50": tier_a["P50"], "tier_a_p100": tier_a["P100"],
+            "tier_b_p50": tier_b["P50"], "tier_b_p100": tier_b["P100"],
+            "tier_b_meets_target_at_p100": tier_b["P100"] <= TARGET_MS,
+            "tier_c_p50": tier_c["P50"] if tier_c else None,
+        },
     }
-    print(json.dumps(out, ensure_ascii=False, indent=2), flush=True)
-
-    # persist raw + summary + report to results/benchmark/ (small, git-friendly)
-    from pathlib import Path
-    RESULTS_DIR = Path(__file__).resolve().parent.parent / "results" / "benchmark"
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    raw = {"strategy": args.strategy, "device": device, "dtype": dtype,
-           "warmup": args.warmup, "timed_queries": len(timed_qids),
-           "cold_start_ms": cold,
-           "per_query_ms": {s: [round(v, 3) for v in per_q[s]] for s in STAGES}}
-    (RESULTS_DIR / "retrieval_raw.json").write_text(
-        json.dumps(raw, ensure_ascii=False, indent=2))
-    summary = {"strategy": args.strategy, "device": device, "dtype": dtype,
-               "timed_queries": len(timed_qids), "warmup": args.warmup,
-               "cold_start_ms": cold, "warm_percentiles_ms": warm,
-               "target_ms": 200, "meets_target": (warm["total_ms"]["P50"] <= 200),
-               "note": "retrieval-stage only; excludes STT + LLM; no <200ms claim"}
-    (RESULTS_DIR / "retrieval_summary.json").write_text(
-        json.dumps(summary, ensure_ascii=False, indent=2))
-    md = ["# Experiment 3 — Retrieval Latency Benchmark",
-          "",
-          f"Strategy: {args.strategy}. Device: {device}({dtype}). "
-          f"{len(timed_qids)} timed queries (warmup {args.warmup}). "
-          "Warmup + model/index load untimed. Real Qdrant dense + BM25 + RRF.",
-          "",
-          "## Warm per-query percentiles (ms)",
-          "",
-          "| Stage | P50 | P70 | P100 |",
-          "|---|---:|---:|---:|"]
-    for s in STAGES:
-        w = warm[s]
-        md.append(f"| {s} | {w['P50']} | {w['P70']} | {w['P100']} |")
-    md += ["", f"Cold-start (first timed query, ms): `{cold}`.", "",
-           f"**Target (<200ms): {'MET' if summary['meets_target'] else 'NOT met'}** "
-           "(retrieval-stage only — STT + LLM not included).", ""]
-    (RESULTS_DIR / "retrieval_report.md").write_text("\n".join(md))
-    print(f"\nsaved: {RESULTS_DIR}/retrieval_{{raw,summary}}.json + "
-          f"retrieval_report.md", flush=True)
+    out_dir = CFG.root / "results" / "benchmark"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "latency.json").write_text(
+        json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    print()
+    print(f"Wrote {(out_dir / 'latency.json').relative_to(CFG.root)}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

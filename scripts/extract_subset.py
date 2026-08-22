@@ -1,47 +1,46 @@
-"""Phase 1: extract a deterministic ~20,000-row Hindi subset and normalize it
-into per-passage documents written as a many-small-row-group parquet.
+"""Extract a deterministic per-language passage corpus from MSMARCO-XI shards.
 
-Memory strategy
-----------------
-* Scalar columns (source_lang, target_lang, query_id, query_type, query,
-  Answer, Eng_Query, Eng_Answer) are small (<= ~90 MB compressed each) and read
-  fully via fastparquet ``to_pandas`` with a single-column projection.
-* The three nested passage columns are streamed with
-  ``backend.rag.bounded_reader.BoundedColumnReader`` — only the first N rows
-  are decoded from a bounded byte slice of each column chunk, so peak RSS is
-  set by the buffer size (<= ~400 MB), not by the ~7 GB file.
-* The three passage columns are read for the SAME first N rows and aligned by
-  row index (verified equal lengths per row).
-* Normalized documents are written incrementally to parquet in small row
-  groups (default 4,000 passages) so the output never recreates the
-  single-giant-row-group problem.
+Each source row is one query with ~10 candidate passages, and every row carries
+the passages in **both** English and the shard's Indic language, aligned
+index-for-index with a shared ``is_selected`` relevance label:
 
-Determinism
------------
-The subset is the FIRST ``--rows`` rows of ``hintrain.parquet`` (row order is
-fixed by the file). No random sampling. Phase 0 confirmed the first rows are
-not obviously biased (query_type distribution on the full file is roughly
-DESCRIPTION > NUMERIC > ENTITY ~ LOCATION > PERSON; the first-rows subset is
-checked by this script and reported).
+    passages.English_passages[i]    <-> passages.Translated_passages[i]
+    passages.is_selected[i]         (1 = human-marked relevant)
 
-Usage
------
-    venv/bin/python scripts/extract_subset.py --rows 20000
+Two consequences this script relies on:
 
-Outputs (under data/processed/):
-    hh_subset_hin.parquet      normalized per-passage documents
-    hh_subset_hin_sample.jsonl  small human-inspectable sample (first ~12 docs)
-    extraction_stats.json      measured performance + validation summary
+* Hindi and English come from the *same* shard, so two serving languages cost
+  one download.
+* Because index ``i`` refers to the same document in both languages and the
+  label is shared, the extracted corpora form an **aligned parallel corpus with
+  free cross-lingual ground truth** — you can ask in Hindi, retrieve an English
+  passage, and still know whether the hit was correct.
+
+Determinism: rows are taken in file order (first ``--rows``), never sampled, so
+the corpus reproduces byte-identically on any machine.
+
+Output (one file per language):
+    data/processed/passages/{lang}.parquet
+        passage_uid, document_id, query_id, passage_index, lang,
+        is_selected, query, query_en, text
+
+``document_id`` is language-independent (``q{query_id}_p{i}``) so the same
+document across languages is trivially joinable — that is what makes the
+cross-lingual evaluation possible.
+
+Usage:
+    python scripts/extract_subset.py                        # all CFG.languages
+    python scripts/extract_subset.py --languages hi,en --rows 20000
+    python scripts/extract_subset.py --rows 5000 --out-dir data/processed/passages
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
-import resource
 import sys
-import time
+import unicodedata
+from collections import Counter
 from pathlib import Path
 
 import pyarrow as pa
@@ -49,229 +48,266 @@ import pyarrow.parquet as pq
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from backend.rag.bounded_reader import BoundedColumnReader, peak_rss_mb  # noqa: E402
-from backend.rag.normalize import (  # noqa: E402
-    CANONICAL_FIELDS, normalize_row,
-)
-import fastparquet as fp  # noqa: E402
+from backend.rag.config import CFG, LANGUAGES  # noqa: E402
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-RAW = PROJECT_ROOT / "data" / "raw" / "MSMARCO-XI" / "train" / "hintrain.parquet"
-OUT_DIR = PROJECT_ROOT / "data" / "processed"
-SAMPLE_DIR = PROJECT_ROOT / "data" / "sample"
+SCHEMA = pa.schema([
+    ("passage_uid", pa.string()),
+    ("document_id", pa.string()),
+    ("query_id", pa.int64()),
+    ("passage_index", pa.int32()),
+    ("lang", pa.string()),
+    ("is_selected", pa.int8()),
+    ("query", pa.string()),
+    ("query_en", pa.string()),
+    ("text", pa.string()),
+])
 
-# Bounded buffer for the passage text columns. 96 MB comfortably yields
-# >25,000 rows for both English and Translated passages (measured), so it
-# covers a 20,000-row subset with margin.
-PASSAGE_BUF_MB = 96
-ROW_GROUP_PASSAGES = 4000  # small row groups in the output parquet
-
-SCALAR_COLUMNS = [
-    "source_lang", "target_lang", "query_id", "query_type",
-    "query", "Answer", "Eng_Query", "Eng_Answer",
-]
+READ_COLUMNS = ["query_id", "query", "Eng_Query", "passages"]
+READ_BATCH = 2000  # rows per Arrow batch; bounds peak RAM on a 1-row-group file
 
 
-def read_scalar_columns(path: str, columns: list[str]) -> dict[str, list]:
-    """Read the small scalar columns fully (single-column projection)."""
-    pf = fp.ParquetFile(path)
-    out: dict[str, list] = {}
-    for c in columns:
-        df = pf.to_pandas(columns=[c])
-        out[c] = df[c].tolist()
-    return out
+def dominant_script(text: str, sample: int = 400) -> str:
+    """Most common Unicode script among the letters of ``text``.
 
-
-def build_rows(
-    n_rows: int,
-    scalars: dict[str, list],
-    eng_passages: list,
-    trans_passages: list,
-    is_selected: list,
-    source_file: str,
-):
-    """Yield normalized passage dicts for the first ``n_rows`` rows.
-
-    Streams row-by-row; does NOT accumulate all documents in memory.
+    Used as a data sanity check (translated Hindi text really is Devanagari) and
+    later for zero-cost sparse-retrieval routing.
     """
-    for i in range(n_rows):
-        row = {
-            "query_id": scalars["query_id"][i],
-            "query_type": scalars["query_type"][i],
-            "query": scalars["query"][i],
-            "Answer": scalars["Answer"][i],
-            "Eng_Query": scalars["Eng_Query"][i],
-            "Eng_Answer": scalars["Eng_Answer"][i],
-            "source_lang": scalars["source_lang"][i],
-            "target_lang": scalars["target_lang"][i],
-            "English_passages": eng_passages[i],
-            "Translated_passages": trans_passages[i],
-            "is_selected": is_selected[i],
-        }
+    counts: Counter[str] = Counter()
+    for ch in text[:sample]:
+        if not ch.isalpha():
+            continue
         try:
-            docs = normalize_row(row, source_file=source_file)
-        except ValueError as e:
-            # Misaligned row: report, skip (do not silently drop).
-            yield ("misaligned", i, str(e))
+            name = unicodedata.name(ch)
+        except ValueError:
             continue
-        for d in docs:
-            yield ("doc", d)
+        counts[name.split()[0]] += 1
+    return counts.most_common(1)[0][0] if counts else "UNKNOWN"
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--rows", type=int, default=20000,
-                    help="number of Hindi query rows to extract (default 20000)")
-    ap.add_argument("--buf-mb", type=int, default=PASSAGE_BUF_MB,
-                    help="byte-buffer size MB for passage columns")
-    args = ap.parse_args()
-    n_rows = args.rows
+def extract_language(lang_code: str, rows: int, out_dir: Path) -> dict:
+    lang = LANGUAGES[lang_code]
+    shard = CFG.shard_path(lang.shard)
+    if not shard.exists():
+        raise FileNotFoundError(
+            f"missing shard for {lang_code} ({lang.name}): {shard}\n"
+            f"Run: python scripts/download_dataset.py "
+            f"--languages {lang.shard} --split {CFG.split}")
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    SAMPLE_DIR.mkdir(parents=True, exist_ok=True)
-    out_parquet = OUT_DIR / "hh_subset_hin.parquet"
-    out_sample = SAMPLE_DIR / "hh_subset_hin_sample.jsonl"
-    out_stats = OUT_DIR / "extraction_stats.json"
+    column = lang.passage_col
+    pf = pq.ParquetFile(shard)
 
-    print(f"=== Phase 1 extraction: first {n_rows} Hindi rows ===")
-    print(f"source: {RAW}")
-    print(f"output: {out_parquet}")
-    t_start = time.time()
+    uids: list[str] = []
+    docids: list[str] = []
+    qids: list[int] = []
+    pidxs: list[int] = []
+    langs: list[str] = []
+    sels: list[int] = []
+    queries: list[str] = []
+    queries_en: list[str] = []
+    texts: list[str] = []
 
-    # 1. Scalar columns (cheap, full read of small columns).
-    t0 = time.time()
-    scalars = read_scalar_columns(str(RAW), SCALAR_COLUMNS)
-    print(f"[1/4] scalar columns read in {time.time()-t0:.1f}s "
-          f"(peak_rss={peak_rss_mb():.0f} MB)")
-    avail_rows = min(len(v) for v in scalars.values())
-    n_rows = min(n_rows, avail_rows)
-    print(f"      using {n_rows} rows (file has {avail_rows})")
-
-    # 2. Passage columns via bounded reader.
-    reader = BoundedColumnReader(str(RAW))
-    t0 = time.time()
-    is_selected = reader.read_first_rows(
-        ["passages", "is_selected", "list", "element"], n_rows,
-        buf_mb=args.buf_mb,
-    )
-    print(f"[2/4] is_selected read: {len(is_selected)} rows "
-          f"in {time.time()-t0:.1f}s (peak_rss={peak_rss_mb():.0f} MB)")
-    t0 = time.time()
-    eng_passages = reader.read_first_rows(
-        ["passages", "English_passages", "list", "element"], n_rows,
-        buf_mb=args.buf_mb,
-    )
-    print(f"[3/4] English_passages read: {len(eng_passages)} rows "
-          f"in {time.time()-t0:.1f}s (peak_rss={peak_rss_mb():.0f} MB)")
-    t0 = time.time()
-    trans_passages = reader.read_first_rows(
-        ["passages", "Translated_passages", "list", "element"], n_rows,
-        buf_mb=args.buf_mb,
-    )
-    print(f"[4/4] Translated_passages read: {len(trans_passages)} rows "
-          f"in {time.time()-t0:.1f}s (peak_rss={peak_rss_mb():.0f} MB)")
-
-    # If the bounded buffer gave fewer rows than asked (shouldn't for 20k/96MB),
-    # trim to the common minimum so all columns stay aligned.
-    n = min(len(is_selected), len(eng_passages), len(trans_passages), n_rows)
-    if n < n_rows:
-        print(f"  WARN: bounded buffer yielded only {n} rows; trimming subset.")
-    n_rows = n
-    is_selected = is_selected[:n_rows]
-    eng_passages = eng_passages[:n_rows]
-    trans_passages = trans_passages[:n_rows]
-
-    # 3. Normalize + write incrementally to a many-row-group parquet.
-    schema = pa.schema([
-        ("document_id", pa.string()),
-        ("query_id", pa.int64()),
-        ("passage_idx", pa.int32()),
-        ("text", pa.string()),
-        ("text_en", pa.string()),
-        ("query", pa.string()),
-        ("query_en", pa.string()),
-        ("answer", pa.string()),
-        ("answer_en", pa.string()),
-        ("language", pa.string()),
-        ("source_lang_code", pa.string()),
-        ("target_lang_code", pa.string()),
-        ("is_selected", pa.int8()),
-        ("query_type", pa.string()),
-        ("source", pa.string()),
-        ("source_file", pa.string()),
-        ("answerable", pa.bool_()),
-    ])
-    writer = pq.ParquetWriter(out_parquet, schema, compression="zstd")
-    source_file = os.path.basename(str(RAW))
-
-    buf: list[dict] = []
-    total_passages = 0
-    rows_written = 0
+    seen_rows = 0
+    skipped_empty = 0
     misaligned = 0
-    sample_written = False
-    t0 = time.time()
+    # A handful of query_ids genuinely repeat in the source file, so query_id
+    # alone does not identify a row. Suffix repeats with their occurrence number
+    # to keep document_id unique. Because every language is read from the same
+    # rows in the same order, the numbering is identical across languages and
+    # the cross-lingual document_id join still holds exactly.
+    qid_seen: Counter[int] = Counter()
+    duplicate_qids = 0
 
-    for kind, *payload in build_rows(
-        n_rows, scalars, eng_passages, trans_passages, is_selected, source_file
-    ):
-        if kind == "misaligned":
-            misaligned += 1
-            idx, msg = payload
-            print(f"  MISALIGNED row {idx}: {msg}")
-            continue
-        doc = payload[0]
-        buf.append(doc)
-        total_passages += 1
-        # small human-inspectable sample (first ~12 docs only)
-        if not sample_written and total_passages <= 12:
-            with out_sample.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(doc, ensure_ascii=False) + "\n")
-            if total_passages == 12:
-                sample_written = True
-        if len(buf) >= ROW_GROUP_PASSAGES:
-            table = pa.Table.from_pylist(buf, schema=schema)
-            writer.write_table(table)
-            rows_written += len(buf)
-            buf = []
-    if buf:
-        table = pa.Table.from_pylist(buf, schema=schema)
-        writer.write_table(table)
-        rows_written += len(buf)
-    writer.close()
-    extract_secs = time.time() - t0
+    for batch in pf.iter_batches(batch_size=READ_BATCH, columns=READ_COLUMNS):
+        if seen_rows >= rows:
+            break
+        d = batch.to_pylist()
+        for r in d:
+            if seen_rows >= rows:
+                break
+            seen_rows += 1
+            ps = r.get("passages") or {}
+            passages = ps.get(column) or []
+            selected = ps.get("is_selected") or []
+            english = ps.get("English_passages") or []
+            translated = ps.get("Translated_passages") or []
 
-    # 4. Validation + stats.
-    out_size = out_parquet.stat().st_size
+            # The parallel-corpus guarantee only holds when all three lists
+            # line up; count violations rather than silently mislabelling.
+            if not (len(english) == len(translated) == len(selected)):
+                misaligned += 1
+
+            qid = int(r.get("query_id") or 0)
+            q = (r.get("query") or "").strip()
+            q_en = (r.get("Eng_Query") or "").strip()
+
+            qid_seen[qid] += 1
+            occurrence = qid_seen[qid]
+            if occurrence == 1:
+                doc_stem = f"q{qid}"
+            else:
+                doc_stem = f"q{qid}d{occurrence}"
+                duplicate_qids += 1
+
+            for i, raw in enumerate(passages):
+                text = (raw or "").strip()
+                if not text:
+                    skipped_empty += 1
+                    continue
+                uids.append(f"{lang_code}_{doc_stem}_p{i}")
+                docids.append(f"{doc_stem}_p{i}")
+                qids.append(qid)
+                pidxs.append(i)
+                langs.append(lang_code)
+                sels.append(int(selected[i]) if i < len(selected) else 0)
+                queries.append(q)
+                queries_en.append(q_en)
+                texts.append(text)
+
+    if not texts:
+        raise RuntimeError(f"extracted zero passages for {lang_code}")
+
+    # Uniqueness is an invariant every downstream index depends on; fail here
+    # rather than letting duplicate ids silently collide during chunking.
+    if len(set(docids)) != len(docids):
+        raise RuntimeError(
+            f"{lang_code}: document_id is not unique "
+            f"({len(docids) - len(set(docids))} collisions)")
+
+    table = pa.Table.from_arrays([
+        pa.array(uids, pa.string()),
+        pa.array(docids, pa.string()),
+        pa.array(qids, pa.int64()),
+        pa.array(pidxs, pa.int32()),
+        pa.array(langs, pa.string()),
+        pa.array(sels, pa.int8()),
+        pa.array(queries, pa.string()),
+        pa.array(queries_en, pa.string()),
+        pa.array(texts, pa.string()),
+    ], schema=SCHEMA)
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{lang_code}.parquet"
+    pq.write_table(table, out_path, compression="zstd", row_group_size=4000)
+
+    n_selected = sum(1 for s in sels if s)
+    queries_with_selected = len({q for q, s in zip(qids, sels) if s})
+    script = dominant_script(" ".join(texts[:50]))
+
     stats = {
-        "source_file": source_file,
-        "rows_requested": args.rows,
-        "rows_processed": n_rows,
-        "passages_produced": total_passages,
+        "lang": lang_code,
+        "name": lang.name,
+        "shard": str(shard.relative_to(CFG.root)),
+        "passage_column": column,
+        "source_rows": seen_rows,
+        "passages": len(texts),
+        "avg_passages_per_row": round(len(texts) / max(seen_rows, 1), 2),
+        "selected_passages": n_selected,
+        "queries_with_selected": queries_with_selected,
+        "unique_queries": len(set(qids)),
+        "unique_documents": len(set(docids)),
+        "skipped_empty": skipped_empty,
         "misaligned_rows": misaligned,
-        "extraction_seconds": round(extract_secs, 2),
-        "total_seconds": round(time.time() - t_start, 2),
-        "peak_rss_mb": round(peak_rss_mb(), 0),
-        "output_path": str(out_parquet),
-        "output_size_bytes": out_size,
-        "output_size_human": _human(out_size),
-        "row_group_passages": ROW_GROUP_PASSAGES,
-        "passage_buf_mb": args.buf_mb,
-        "throughput_rows_per_s": round(n_rows / max(extract_secs, 1e-9), 1),
-        "throughput_passages_per_s": round(total_passages / max(extract_secs, 1e-9), 1),
+        "repeated_query_id_rows": duplicate_qids,
+        "dominant_script": script,
+        "expected_script": lang.script,
+        "script_ok": script.upper().startswith(lang.script.upper()[:4]),
+        "out": str(out_path.relative_to(CFG.root)),
+        "size_mb": round(out_path.stat().st_size / (1024 ** 2), 1),
     }
-    out_stats.write_text(json.dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8")
-    print("\n=== DONE ===")
-    print(json.dumps(stats, ensure_ascii=False, indent=2))
+
+    print(f"  passages          : {stats['passages']:,}")
+    print(f"  from source rows  : {stats['source_rows']:,} "
+          f"({stats['avg_passages_per_row']} passages/row)")
+    print(f"  selected (relevant): {stats['selected_passages']:,} across "
+          f"{stats['queries_with_selected']:,} queries")
+    print(f"  script            : {script} (expected {lang.script}) "
+          f"{'OK' if stats['script_ok'] else 'MISMATCH'}")
+    if misaligned:
+        print(f"  WARNING: {misaligned} rows had misaligned EN/translated/label "
+              f"lists — cross-lingual pairing is not exact for those")
+    print(f"  wrote             : {stats['out']} ({stats['size_mb']} MB)")
+    return stats
 
 
-def _human(n: int) -> str:
-    x = float(n)
-    for u in ("B", "KiB", "MiB", "GiB"):
-        if x < 1024 or u == "GiB":
-            return f"{x:.2f} {u}"
-        x /= 1024
-    return f"{n} B"
+def main() -> int:
+    ap = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--languages", default=",".join(CFG.languages),
+                    help=f"comma-separated language codes "
+                         f"(default: {','.join(CFG.languages)})")
+    ap.add_argument("--rows", type=int, default=CFG.subset_rows,
+                    help=f"source query rows per language "
+                         f"(default: {CFG.subset_rows})")
+    ap.add_argument("--out-dir", default=None,
+                    help="output directory (default: data/processed/passages)")
+    args = ap.parse_args()
+
+    codes = [c.strip().lower() for c in args.languages.split(",") if c.strip()]
+    bad = [c for c in codes if c not in LANGUAGES]
+    if bad:
+        print(f"ERROR: unknown language(s): {', '.join(bad)}", file=sys.stderr)
+        print(f"Known: {', '.join(LANGUAGES)}", file=sys.stderr)
+        return 2
+
+    out_dir = Path(args.out_dir) if args.out_dir else \
+        CFG.processed_dir / "passages"
+
+    print("=" * 70)
+    print("EXTRACT PASSAGE CORPUS")
+    print("=" * 70)
+    print(f"Split     : {CFG.split}")
+    print(f"Languages : {', '.join(codes)}")
+    print(f"Rows/lang : {args.rows:,}")
+    print(f"Output    : {out_dir}")
+    print()
+
+    all_stats = []
+    for code in codes:
+        print(f"[{code}] {LANGUAGES[code].name} "
+              f"<- {LANGUAGES[code].passage_col}")
+        try:
+            all_stats.append(extract_language(code, args.rows, out_dir))
+        except (FileNotFoundError, RuntimeError) as e:
+            print(f"  FAILED: {e}", file=sys.stderr)
+            return 1
+        print()
+
+    # Cross-lingual alignment check: languages drawn from the same shard must
+    # produce identical document_id sets, which is what the parallel evaluation
+    # depends on.
+    print("-" * 70)
+    doc_sets: dict[str, set[str]] = {}
+    for s in all_stats:
+        tbl = pq.read_table(out_dir / f"{s['lang']}.parquet",
+                            columns=["document_id"])
+        doc_sets[s["lang"]] = set(tbl.column("document_id").to_pylist())
+    codes_present = list(doc_sets)
+    for i, a in enumerate(codes_present):
+        for b in codes_present[i + 1:]:
+            shared = len(doc_sets[a] & doc_sets[b])
+            print(f"parallel documents {a} <-> {b}: {shared:,} shared "
+                  f"document_ids ({len(doc_sets[a]):,} / {len(doc_sets[b]):,})")
+
+    report = CFG.root / "docs" / "corpus_stats.json"
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(json.dumps({
+        "split": CFG.split, "rows_per_language": args.rows,
+        "languages": all_stats,
+        "parallel_overlap": {
+            f"{a}|{b}": len(doc_sets[a] & doc_sets[b])
+            for i, a in enumerate(codes_present) for b in codes_present[i + 1:]
+        },
+    }, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    print()
+    print("=" * 70)
+    print(f"EXTRACTION COMPLETE — {sum(s['passages'] for s in all_stats):,} "
+          f"passages across {len(all_stats)} language(s)")
+    print(f"Stats: {report.relative_to(CFG.root)}")
+    print("=" * 70)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

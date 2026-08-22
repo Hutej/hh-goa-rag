@@ -1,34 +1,177 @@
 {
-  "passages": 199590,
-  "empty_passages": 0,
-  "min": 1,
-  "max": 8183,
-  "mean": 102.27,
-  "median": 88,
-  "p25": 72,
-  "p50": 88,
-  "p75": 112,
-  "p90": 153,
-  "p95": 177,
-  "p99": 228,
-  "le_128": 164834,
-  "129_to_512": 34342,
-  "gt_512": 414,
-  "le_256": 198626,
-  "257_to_384": 541,
-  "gt_384": 423,
-  "histogram": {
-    "1-64": 31943,
-    "65-128": 132891,
-    "129-256": 33792,
-    "257-384": 541,
-    "385-512": 9,
-    "513-1024": 4,
-    "1025-2048": 59,
-    "2049-4096": 331,
-    "4097+": 20
-  },
-  "seconds": 37.23,
-  "throughput_passages_per_s": 5360.4,
-  "tokenizer": "BAAI/bge-m3 (XLM-RoBERTa, content tokens, add_special_tokens=False)"
+  "tokenizer": "intfloat/multilingual-e5-small",
+  "add_special_tokens": false,
+  "languages": {
+    "hi": {
+      "lang": "hi",
+      "name": "Hindi",
+      "script": "Devanagari",
+      "passages_measured": 199884,
+      "tokens": {
+        "P1": 29.0,
+        "P5": 44.0,
+        "P25": 68.0,
+        "P50": 86.0,
+        "P75": 106.0,
+        "P80": 113.0,
+        "P90": 138.0,
+        "P95": 162.0,
+        "P99": 216.0,
+        "P99.5": 245.0,
+        "min": 1,
+        "max": 8183,
+        "mean": 96.5
+      },
+      "chars": {
+        "P1": 94.0,
+        "P5": 146.0,
+        "P25": 233.0,
+        "P50": 290.0,
+        "P75": 348.0,
+        "P80": 368.0,
+        "P90": 456.0,
+        "P95": 535.0,
+        "P99": 705.0,
+        "P99.5": 801.0,
+        "min": 1,
+        "max": 14063,
+        "mean": 317.8
+      },
+      "chars_per_token": 3.29,
+      "thresholds": {
+        "short_max": 113,
+        "medium_max": 256,
+        "semantic_max": 169
+      },
+      "bands": {
+        "short": {
+          "count": 160253,
+          "pct": 80.17
+        },
+        "medium": {
+          "count": 38825,
+          "pct": 19.42
+        },
+        "long": {
+          "count": 806,
+          "pct": 0.4
+        }
+      },
+      "measure_seconds": 15.2
+    },
+    "en": {
+      "lang": "en",
+      "name": "English",
+      "script": "Latin",
+      "passages_measured": 199884,
+      "tokens": {
+        "P1": 25.0,
+        "P5": 38.0,
+        "P25": 58.0,
+        "P50": 71.0,
+        "P75": 86.0,
+        "P80": 92.0,
+        "P90": 114.0,
+        "P95": 133.0,
+        "P99": 171.0,
+        "P99.5": 188.0,
+        "min": 1,
+        "max": 426,
+        "mean": 75.7
+      },
+      "chars": {
+        "P1": 96.0,
+        "P5": 157.0,
+        "P25": 240.0,
+        "P50": 294.0,
+        "P75": 342.0,
+        "P80": 362.0,
+        "P90": 466.0,
+        "P95": 537.0,
+        "P99": 682.0,
+        "P99.5": 749.6,
+        "min": 3,
+        "max": 1391,
+        "mean": 307.9
+      },
+      "chars_per_token": 4.07,
+      "thresholds": {
+        "short_max": 92,
+        "medium_max": 256,
+        "semantic_max": 138
+      },
+      "bands": {
+        "short": {
+          "count": 160195,
+          "pct": 80.14
+        },
+        "medium": {
+          "count": 39625,
+          "pct": 19.82
+        },
+        "long": {
+          "count": 64,
+          "pct": 0.03
+        }
+      },
+      "measure_seconds": 12.4
+    },
+    "mr": {
+      "lang": "mr",
+      "name": "Marathi",
+      "script": "Devanagari",
+      "passages_measured": 199884,
+      "tokens": {
+        "P1": 30.0,
+        "P5": 44.0,
+        "P25": 67.0,
+        "P50": 84.0,
+        "P75": 105.0,
+        "P80": 112.0,
+        "P90": 136.0,
+        "P95": 160.0,
+        "P99": 216.0,
+        "P99.5": 255.0,
+        "min": 1,
+        "max": 8192,
+        "mean": 97.4
+      },
+      "chars": {
+        "P1": 95.0,
+        "P5": 146.0,
+        "P25": 231.0,
+        "P50": 286.0,
+        "P75": 343.0,
+        "P80": 363.0,
+        "P90": 451.0,
+        "P95": 529.0,
+        "P99": 707.0,
+        "P99.5": 836.0,
+        "min": 1,
+        "max": 23165,
+        "mean": 320.5
+      },
+      "chars_per_token": 3.29,
+      "thresholds": {
+        "short_max": 112,
+        "medium_max": 256,
+        "semantic_max": 168
+      },
+      "bands": {
+        "short": {
+          "count": 160544,
+          "pct": 80.32
+        },
+        "medium": {
+          "count": 38368,
+          "pct": 19.2
+        },
+        "long": {
+          "count": 972,
+          "pct": 0.49
+        }
+      },
+      "measure_seconds": 20.9
+    }
+  }
 }

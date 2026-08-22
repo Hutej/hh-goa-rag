@@ -16,6 +16,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 
+# Legacy module: superseded by backend/rag/retrieval.py, whose rrf_fuse adds
+# per-document diversity capping and multilingual routing. hybrid.py imports the
+# old Qdrant path, so skip when that legacy dependency is absent.
+pytest.importorskip("qdrant_client",
+                    reason="legacy dependency; superseded by retrieval.py")
+
 from backend.rag.hybrid import rrf_fuse
 
 

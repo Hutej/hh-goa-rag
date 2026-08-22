@@ -1,0 +1,35 @@
+# ---------------------------------------------------------------------------
+# BUILD-TIME dependencies: dataset extraction, chunking, corpus embedding,
+# index construction, ONNX export, evaluation and tests.
+#
+# Not installed on the deploy target. Install on the machine that builds the
+# artifacts (needs a GPU for the corpus embedding pass to be quick).
+#
+#   python -m venv venv
+#   venv\Scripts\python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
+#   venv\Scripts\python -m pip install -r requirements-build.txt
+#
+# torch is installed separately from the CUDA index above: the default PyPI
+# Windows wheel is CPU-only, which makes the corpus embedding pass ~20x slower.
+# ---------------------------------------------------------------------------
+
+-r requirements.txt
+
+# --- corpus embedding (GPU) ---
+sentence-transformers>=3.0
+transformers>=4.40
+
+# --- ONNX export + int8 dynamic quantization of the query encoder ---
+optimum[onnxruntime]>=1.19
+onnx>=1.16
+
+# --- dataset extraction / chunking ---
+pandas>=2.2
+fastparquet>=2024.2
+
+# --- baselines kept for measured comparison, not for serving ---
+rank-bm25>=0.2.2      # the slow BM25 we replaced; used for ranking-parity check
+qdrant-client>=1.9    # optional INDEX_BACKEND=qdrant path + legacy indexer
+
+# --- tests ---
+pytest>=8.0

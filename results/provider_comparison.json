@@ -1,0 +1,119 @@
+{
+  "generation_k": 3,
+  "max_tokens": 160,
+  "repeats": 3,
+  "note": "measured from the build machine; a deployment colocated with the provider region will see materially lower TTFT",
+  "providers": {
+    "openai": {
+      "model": "gpt-4.1-mini",
+      "warmup": {
+        "warmed": true,
+        "ms": 2797.0
+      },
+      "ttft_p50_overall": 660.9,
+      "languages": {
+        "en": {
+          "ttft_p50": 660.9,
+          "total_p50": 1080.0,
+          "query_script": "LATIN",
+          "answer_script": "LATIN",
+          "script_match": true,
+          "groundedness": 0.769,
+          "sample": "The average total cost for a hip replacement in the United States is $40,364, with prices potentially rising up to $87,987."
+        },
+        "hi": {
+          "ttft_p50": 610.5,
+          "total_p50": 2132.7,
+          "query_script": "DEVANAGARI",
+          "answer_script": "DEVANAGARI",
+          "script_match": true,
+          "groundedness": 0.87,
+          "sample": "मैनहट्टन परियोजना द्वितीय विश्व युद्ध के दौरान पहली परमाणु बम विकसित करने के लिए की गई एक गुप्त सैन्य परियोजना थी, जिसका नेतृत्व डॉ. जे. रॉबर्ट ओपेनहा"
+        },
+        "mr": {
+          "ttft_p50": 700.0,
+          "total_p50": 2387.2,
+          "query_script": "DEVANAGARI",
+          "answer_script": "DEVANAGARI",
+          "script_match": true,
+          "groundedness": 0.964,
+          "sample": "मॅनहॅटन प्रकल्प हा दुसऱ्या महायुद्धादरम्यान पहिले अणुबॉम्ब विकसित करण्यासाठी १९४२-१९४६ या कालावधीत यू.एस. आर्मी कॉर्प्स ऑफ इंजिनिअर्सच्या नियंत्रणाखाल"
+        }
+      }
+    },
+    "groq": {
+      "model": "openai/gpt-oss-20b",
+      "warmup": {
+        "warmed": true,
+        "ms": 840.4
+      },
+      "ttft_p50_overall": 571.7,
+      "languages": {
+        "en": {
+          "ttft_p50": 571.7,
+          "total_p50": 589.9,
+          "query_script": "LATIN",
+          "answer_script": "LATIN",
+          "script_match": true,
+          "groundedness": 0.737,
+          "sample": "The average total cost for a hip replacement in the United States is about $40,364, covering physician and hospital fees. In some cases the price can "
+        },
+        "hi": {
+          "ttft_p50": null,
+          "total_p50": 557.4,
+          "query_script": "DEVANAGARI",
+          "answer_script": "NONE",
+          "script_match": false,
+          "groundedness": 0.0,
+          "sample": ""
+        },
+        "mr": {
+          "ttft_p50": null,
+          "total_p50": 522.6,
+          "query_script": "DEVANAGARI",
+          "answer_script": "NONE",
+          "script_match": false,
+          "groundedness": 0.0,
+          "sample": ""
+        }
+      }
+    },
+    "gemini": {
+      "model": "gemini-3.5-flash-lite",
+      "warmup": {
+        "warmed": true,
+        "ms": 878.2
+      },
+      "ttft_p50_overall": 743.2,
+      "languages": {
+        "en": {
+          "ttft_p50": 713.4,
+          "total_p50": 714.7,
+          "query_script": "LATIN",
+          "answer_script": "LATIN",
+          "script_match": true,
+          "groundedness": 0.917,
+          "sample": "The average total cost for a hip replacement in the United States is $40,364, and the price can rise up to $87,987."
+        },
+        "hi": {
+          "ttft_p50": 720.9,
+          "total_p50": 773.5,
+          "query_script": "DEVANAGARI",
+          "answer_script": "DEVANAGARI",
+          "script_match": true,
+          "groundedness": 1.0,
+          "sample": "मैनहट्टन परियोजना द्वितीय विश्व युद्ध के दौरान पहला परमाणु बम विकसित करने और उसमें विस्फोट करने के लिए एक शीर्ष गुप्त सैन्य प्रयास था। यह 1942-1946 की"
+        },
+        "mr": {
+          "ttft_p50": 806.3,
+          "total_p50": 807.9,
+          "query_script": "DEVANAGARI",
+          "answer_script": "DEVANAGARI",
+          "script_match": true,
+          "groundedness": 0.897,
+          "sample": "मॅनहॅटन प्रकल्प हे दुसऱ्या महायुद्धादरम्यान पहिले अणुबॉम्ब विकसित करण्यासाठी आणि त्याचा स्फोट करण्यासाठीचा एक अत्यंत गुप्त लष्करी प्रयत्न होता. संशोधन"
+        }
+      }
+    }
+  }
+}

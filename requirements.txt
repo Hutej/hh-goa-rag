@@ -1,20 +1,43 @@
+# ---------------------------------------------------------------------------
+# SERVE-TIME dependencies only. This is what the deployed Space installs.
+#
+# Deliberately excludes torch / sentence-transformers / transformers: the query
+# encoder is served as an int8 ONNX graph via onnxruntime, and the tokenizer is
+# loaded by `tokenizers` directly from tokenizer.json. That keeps the image at
+# ~500 MB instead of ~4 GB and removes a multi-GB cold start.
+#
+# To build indexes or re-export the ONNX encoder, use requirements-build.txt.
+#
 #   python -m venv venv
-#   source venv/bin/activate
-#   pip install -r requirements.txt
+#   venv\Scripts\pip install -r requirements-build.txt   # dev / indexing box
+#   pip install -r requirements.txt                      # deploy target
+#
+# Exact resolved versions are captured in requirements.lock.txt (pip freeze).
+# ---------------------------------------------------------------------------
 
-numpy
-pandas
-pyarrow
-fastparquet
-transformers
-tokenizers
-sentence-transformers
-huggingface-hub
-pytest
-sarvamai
-openai
-qdrant-client
-rank-bm25
-fastapi
-uvicorn[standard]
-python-multipart
+# --- numerics / storage ---
+numpy>=1.26,<3
+pyarrow>=15
+scipy>=1.11
+
+# --- query encoder (ONNX int8 inference, no torch) ---
+onnxruntime>=1.17
+tokenizers>=0.15
+
+# --- retrieval ---
+bm25s>=0.2.0          # sparse BM25: scipy CSC scoring, ~200x faster than rank_bm25
+faiss-cpu>=1.8.0      # dense ANN (HNSW) in-process
+
+# --- API layer ---
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+pydantic>=2.6
+
+# --- external providers ---
+openai>=1.30          # OpenAI-compatible client (OpenAI/Groq/Gemini/OpenRouter/Sarvam)
+httpx[http2]>=0.27    # pooled keep-alive HTTP/2 transport
+sarvamai>=0.1.30      # Sarvam STT
+
+# --- artifact bootstrap on first deploy ---
+huggingface-hub>=0.34
