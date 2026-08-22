@@ -1,3 +1,15 @@
+---
+title: Voice RAG - Hindi, Marathi, English
+sdk: docker
+app_port: 7860
+pinned: false
+license: mit
+short_description: Voice-enabled multilingual RAG over MSMARCO-XI, 22ms retrieval
+---
+
+<!-- The block above is Hugging Face Spaces configuration (Docker SDK, port
+     7860). GitHub renders it as a table; it is required for the live deploy. -->
+
 # Voice-Enabled Multilingual RAG — HH Goa 2026
 
 Ask a question out loud in **Hindi, Marathi or English**. The system transcribes

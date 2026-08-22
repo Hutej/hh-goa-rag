@@ -133,6 +133,16 @@ def health() -> dict:
             stats = {"error": str(e)[:200]}
 
     llm = Components.llm()
+
+    # On a fresh deployment the usual failure is a missing or misnamed artifact
+    # repo. Reporting exactly which language is missing which index turns that
+    # from an opaque 500 into a one-line diagnosis.
+    try:
+        from backend.rag.bootstrap import missing_report, serve_data_ready
+        artifacts = {"ready": serve_data_ready(), **missing_report()}
+    except Exception as e:  # pragma: no cover - defensive
+        artifacts = {"error": str(e)[:200]}
+
     return {
         "status": "ok" if ready else "starting",
         "ready": ready,
@@ -140,6 +150,7 @@ def health() -> dict:
         "stt_available": stt_ready,
         "llm_available": llm is not None,
         "llm": llm.describe() if llm is not None else None,
+        "artifacts": artifacts,
         "indexes": stats,
         **describe(),
     }

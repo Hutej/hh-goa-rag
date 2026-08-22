@@ -40,3 +40,4 @@ run.ps1
 run.sh
 .venv/
 results/2026*.json
+task2_hhg.txt
